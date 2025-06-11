@@ -11,20 +11,22 @@ def _smooth(image, sigma, mode, cval, channel_axis):
     """Return image with each channel smoothed by the Gaussian filter."""
     smoothed = np.empty_like(image)
 
-    # apply Gaussian filter to all channels independently
-    if channel_axis is not None:
-        # can rely on gaussian to insert a 0 entry at channel_axis
-        channel_axis = channel_axis % image.ndim
-        sigma = (sigma,) * (image.ndim - 1)
+    image_ndim = image.ndim
+    needs_channel_axis = channel_axis is not None
+    if needs_channel_axis:
+        ca_mod = channel_axis % image_ndim
+        sigma_sm = (sigma,) * (image_ndim - 1)
     else:
-        channel_axis = None
+        ca_mod = None
+        sigma_sm = sigma
+    # Call gaussian with proper argument structure:
     gaussian(
         image,
-        sigma=sigma,
+        sigma=sigma_sm,
         out=smoothed,
         mode=mode,
         cval=cval,
-        channel_axis=channel_axis,
+        channel_axis=ca_mod if needs_channel_axis else None,
     )
     return smoothed
 
