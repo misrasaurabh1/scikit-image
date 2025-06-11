@@ -1,3 +1,4 @@
+import functools
 import sys
 
 from packaging import version as _version
@@ -94,20 +95,24 @@ def require(name, version=None):
         A decorator that raises an ImportError if a function is run
         in the absence of the input dependency.
     """
-    # since version_requirements is in the critical import path, we lazy import
-    # functools
-    import functools
 
     def decorator(obj):
+        # Precompute the message template to avoid string concat on every failed call
+        if version is not None:
+            _version_str = f" {version}"
+        else:
+            _version_str = ""
+
+        obj_module = obj.__module__
+        obj_str = str(obj)
+
         @functools.wraps(obj)
         def func_wrapped(*args, **kwargs):
             if is_installed(name, version):
                 return obj(*args, **kwargs)
-            else:
-                msg = f'"{obj}" in "{obj.__module__}" requires "{name}'
-                if version is not None:
-                    msg += f" {version}"
-                raise ImportError(msg + '"')
+            # Only compute the error message when needed (on ImportError)
+            msg = f'"{obj_str}" in "{obj_module}" requires "{name}{_version_str}"'
+            raise ImportError(msg)
 
         return func_wrapped
 
