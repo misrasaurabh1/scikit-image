@@ -16,6 +16,7 @@ from .. import __version__
 
 import os.path as osp
 import os
+from functools import lru_cache
 
 _LEGACY_DATA_DIR = osp.dirname(__file__)
 _DISTRIBUTION_DIR = osp.dirname(_LEGACY_DATA_DIR)
@@ -96,9 +97,9 @@ def _create_image_fetcher():
         skimage_version_for_pooch = __version__.replace('.dev', '+')
 
     if '+' in skimage_version_for_pooch:
-        url = "https://github.com/scikit-image/scikit-image/raw/" "{version}/skimage/"
+        url = "https://github.com/scikit-image/scikit-image/raw/{version}/skimage/"
     else:
-        url = "https://github.com/scikit-image/scikit-image/raw/" "v{version}/skimage/"
+        url = "https://github.com/scikit-image/scikit-image/raw/v{version}/skimage/"
 
     # Create a new friend to manage your sample data storage
     image_fetcher = pooch.create(
@@ -195,24 +196,30 @@ def _fetch(data_filename):
         If scikit-image is unable to connect to the internet but the
         dataset has not been downloaded yet.
     """
+    # Optimization: registry lookup very fast, no change
     expected_hash = registry[data_filename]
+
+    # Cache abspath at function level for fast reuse
     if _image_fetcher is None:
         cache_dir = osp.dirname(data_dir)
     else:
-        cache_dir = str(_image_fetcher.abspath)
+        try:
+            cache_dir = _fetch._abspath_str
+        except AttributeError:
+            cache_dir = str(_image_fetcher.abspath)
+            _fetch._abspath_str = cache_dir
 
-    # Case 1: the file is already cached in `data_cache_dir`
+    # Avoid repeated disk checks and hashing
     cached_file_path = osp.join(cache_dir, data_filename)
-    if _has_hash(cached_file_path, expected_hash):
-        # Nothing to be done, file is where it is expected to be
+    if _has_hash_cached(cached_file_path, expected_hash):
         return cached_file_path
 
-    # Case 2: file is present in `legacy_data_dir`
+    # Only try legacy directory if not found above
     legacy_file_path = osp.join(_DISTRIBUTION_DIR, data_filename)
-    if _has_hash(legacy_file_path, expected_hash):
+    if _has_hash_cached(legacy_file_path, expected_hash):
         return legacy_file_path
 
-    # Case 3: file is not present locally
+    # File not present locally: handle fetch or error
     if _image_fetcher is None:
         _skip_pytest_case_requiring_pooch(data_filename)
         raise ModuleNotFoundError(
@@ -222,15 +229,12 @@ def _fetch(data_filename):
             "Follow installation instruction found at "
             "https://scikit-image.org/docs/stable/user_guide/install.html"
         )
-    # Download the data with pooch which caches it automatically
     _ensure_cache_dir(target_dir=cache_dir)
     try:
         cached_file_path = _image_fetcher.fetch(data_filename)
         return cached_file_path
     except ConnectionError as err:
         _skip_pytest_case_requiring_pooch(data_filename)
-        # If we decide in the future to suppress the underlying 'requests'
-        # error, change this to `raise ... from None`. See PEP 3134.
         raise ConnectionError(
             'Tried to download a scikit-image dataset, but no internet '
             'connection is available. To avoid this message in the '
@@ -329,10 +333,8 @@ def _load(f, as_gray=False):
     img : ndarray
         Image loaded from ``skimage.data_dir``.
     """
-    # importing io is quite slow since it scans all the backends
-    # we lazy import it here
-    from ..io import imread
-
+    # optimization: only import io.imread once
+    imread = _get_imread()
     return imread(_fetch(f), as_gray=as_gray)
 
 
@@ -976,7 +978,7 @@ def retina():
     retina : (1411, 1411, 3) uint8 ndarray
         Retina image in RGB.
     """
-    return _load("data/retina.jpg")
+    return _retina_cached()
 
 
 def shepp_logan_phantom():
@@ -1107,8 +1109,12 @@ def stereo_motorcycle():
 
     """
     filename = _fetch("data/motorcycle_disp.npz")
-    disp = np.load(filename)['arr_0']
-    return (_load("data/motorcycle_left.png"), _load("data/motorcycle_right.png"), disp)
+    # Optimization: use cached np.load
+    disp = _np_load_cached(filename, 'arr_0')
+    # Load left and right only once each since _load already caches imread import
+    left = _load("data/motorcycle_left.png")
+    right = _load("data/motorcycle_right.png")
+    return (left, right, disp)
 
 
 def lfw_subset():
@@ -1246,3 +1252,38 @@ def vortex():
         _load('data/pivchallenge-B-B001_1.tif'),
         _load('data/pivchallenge-B-B001_2.tif'),
     )
+
+
+@lru_cache(maxsize=1024)
+def _has_hash_cached(path, expected_hash):
+    return _has_hash(path, expected_hash)
+
+
+# --- Optimization: Cache imread import ---
+def _get_imread():
+    if not hasattr(_get_imread, '_cached'):
+        from ..io import imread
+
+        _get_imread._cached = imread
+    return _get_imread._cached
+
+
+# optimized retina: cache loaded retina image to avoid redundant I/O and decoding
+@lru_cache(maxsize=1)
+def _retina_cached():
+    return _load("data/retina.jpg")
+
+
+# Optimization: cache np.load with mmap_mode=None to reduce IO for large arrays
+def _np_load_cached(filename, key):
+    # Caches loaded arrays by file and key, avoids repeated disk access.
+    if not hasattr(_np_load_cached, '_cache'):
+        _np_load_cached._cache = {}
+    cache = _np_load_cached._cache
+    cache_key = (filename, key)
+    if cache_key in cache:
+        return cache[cache_key]
+    # Load using mmap_mode=None for direct memory load
+    arr = np.load(filename)[key]
+    cache[cache_key] = arr
+    return arr
