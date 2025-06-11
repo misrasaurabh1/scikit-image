@@ -21,7 +21,7 @@ class WarpSuite:
     param_names = ['dtype_in', 'N', 'order']
 
     # def setup(self, dtype_in, N, order, dtype_tform):
-    def setup(self, dtype_in, N, order):
+    def setup_method(self, dtype_in, N, order):
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", "Possible precision loss")
             self.image = convert(np.random.random((N, N)), dtype=dtype_in)
@@ -39,7 +39,7 @@ class WarpSuite:
             self.warp = functools.partial(warp)
 
     # def time_same_type(self, dtype_in, N, order, dtype_tform):
-    def time_same_type(self, dtype_in, N, order):
+    def test_same_type(self, dtype_in, N, order):
         """Test the case where the users wants to preserve their same low
         precision data type."""
         result = self.warp(
@@ -50,7 +50,7 @@ class WarpSuite:
         result = result.astype(dtype_in, copy=False)
 
     # def time_to_float64(self, dtype_in, N, order, dtype_form):
-    def time_to_float64(self, dtype_in, N, order):
+    def test_to_float64(self, dtype_in, N, order):
         """Test the case where want to upvert to float64 for continued
         transformations."""
         warp(self.image, self.tform, order=self.order, preserve_range=True)
@@ -66,10 +66,10 @@ class ResizeLocalMeanSuite:
 
     timeout = 180
 
-    def setup(self, dtype, shape_in, shape_out):
+    def setup_method(self, dtype, shape_in, shape_out):
         if len(shape_in) != len(shape_out):
             raise NotImplementedError("shape_in, shape_out must have same dimension")
         self.image = np.zeros(shape_in, dtype=dtype)
 
-    def time_resize_local_mean(self, dtype, shape_in, shape_out):
+    def test_resize_local_mean(self, dtype, shape_in, shape_out):
         resize_local_mean(self.image, shape_out)

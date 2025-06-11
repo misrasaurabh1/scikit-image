@@ -21,10 +21,10 @@ class RegionpropsTableIndividual:
     param_names = ['prop']
     params = sorted(list(PROP_VALS))
 
-    def setup(self, prop):
+    def setup_method(self, prop):
         self.label_image, self.intensity_image = init_regionprops_data()
 
-    def time_single_region_property(self, prop):
+    def test_single_region_property(self, prop):
         measure.regionprops_table(
             self.label_image, self.intensity_image, properties=[prop], cache=True
         )
@@ -36,10 +36,10 @@ class RegionpropsTableAll:
     param_names = ['cache']
     params = (False, True)
 
-    def setup(self, cache):
+    def setup_method(self, cache):
         self.label_image, self.intensity_image = init_regionprops_data()
 
-    def time_regionprops_table_all(self, cache):
+    def test_regionprops_table_all(self, cache):
         measure.regionprops_table(
             self.label_image, self.intensity_image, properties=PROP_VALS, cache=cache
         )
@@ -57,21 +57,21 @@ class MomentsSuite:
 
     """Benchmark for filter routines in scikit-image."""
 
-    def setup(self, shape, dtype, *args):
+    def setup_method(self, shape, dtype, *args):
         rng = np.random.default_rng(1234)
         if np.dtype(dtype).kind in 'iu':
             self.image = rng.integers(0, 256, shape, dtype=dtype)
         else:
             self.image = rng.standard_normal(shape, dtype=dtype)
 
-    def time_moments_raw(self, shape, dtype, order):
+    def test_moments_raw(self, shape, dtype, order):
         measure.moments(self.image)
 
-    def time_moments_central(self, shape, dtype, order):
+    def test_moments_central(self, shape, dtype, order):
         measure.moments_central(self.image)
 
-    def peakmem_reference(self, shape, dtype, order):
+    def test_peakmem_reference(self, shape, dtype, order):
         pass
 
-    def peakmem_moments_central(self, shape, dtype, order):
+    def test_peakmem_moments_central(self, shape, dtype, order):
         measure.moments_central(self.image)

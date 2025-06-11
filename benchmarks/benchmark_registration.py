@@ -28,15 +28,15 @@ class RegistrationSuite:
     param_names = ["dtype"]
     params = [(np.float32, np.float64)]
 
-    def setup(self, *args):
+    def setup_method(self, *args):
         I0, I1, _ = data.stereo_motorcycle()
         self.I0 = rgb2gray(I0)
         self.I1 = rgb2gray(I1)
 
-    def time_tvl1(self, dtype):
+    def test_tvl1(self, dtype):
         registration.optical_flow_tvl1(self.I0, self.I1, dtype=dtype)
 
-    def time_ilk(self, dtype):
+    def test_ilk(self, dtype):
         registration.optical_flow_ilk(self.I0, self.I1, dtype=dtype)
 
 
@@ -55,7 +55,7 @@ class PhaseCrossCorrelationRegistration:
         self.shifted_image = ndi.fourier_shift(self.reference_image, shifts)
         self.shifted_image = self.shifted_image.astype(dtype, copy=False)
 
-    def time_phase_cross_correlation(self, ndims, image_size, upsample_factor, *args):
+    def test_phase_cross_correlation(self, ndims, image_size, upsample_factor, *args):
         phase_cross_correlation(
             self.reference_image,
             self.shifted_image,
@@ -63,7 +63,7 @@ class PhaseCrossCorrelationRegistration:
             space="fourier",
         )
 
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
         Peakmem benchmarks measure the maximum amount of RAM used by a
         function. However, this maximum also includes the memory used
@@ -77,7 +77,7 @@ class PhaseCrossCorrelationRegistration:
         """
         pass
 
-    def peakmem_phase_cross_correlation(
+    def test_peakmem_phase_cross_correlation(
         self, ndims, image_size, upsample_factor, *args
     ):
         phase_cross_correlation(

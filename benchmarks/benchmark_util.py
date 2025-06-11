@@ -9,13 +9,13 @@ class NoiseSuite:
 
     params = ([0.0, 0.50, 1.0], [0.0, 0.50, 1.0])
 
-    def setup(self, *_):
+    def setup_method(self, *_):
         self.image = np.zeros((5000, 5000))
 
-    def peakmem_salt_and_pepper(self, amount, salt_vs_pepper):
+    def test_peakmem_salt_and_pepper(self, amount, salt_vs_pepper):
         self._make_salt_and_pepper_noise(amount, salt_vs_pepper)
 
-    def time_salt_and_pepper(self, amount, salt_vs_pepper):
+    def test_salt_and_pepper(self, amount, salt_vs_pepper):
         self._make_salt_and_pepper_noise(amount, salt_vs_pepper)
 
     def _make_salt_and_pepper_noise(self, amount, salt_vs_pepper):

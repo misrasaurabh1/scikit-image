@@ -7,7 +7,7 @@ from skimage import color, data, feature, util
 class FeatureSuite:
     """Benchmark for feature routines in scikit-image."""
 
-    def setup(self):
+    def setup_method(self):
         # Use a real-world image for more realistic features, but tile it to
         # get a larger size for the benchmark.
         self.image = np.tile(color.rgb2gray(data.astronaut()), (4, 4))
@@ -16,18 +16,18 @@ class FeatureSuite:
             self.image, min_distance=5, threshold_rel=0.1
         )
 
-    def time_canny(self):
+    def test_canny(self):
         feature.canny(self.image)
 
-    def time_glcm(self):
+    def test_glcm(self):
         pi = np.pi
         feature.greycomatrix(
             self.image_ubyte, distances=[1, 2], angles=[0, pi / 4, pi / 2, 3 * pi / 4]
         )
 
-    def time_brief(self):
+    def test_brief(self):
         extractor = feature.BRIEF()
         extractor.extract(self.image, self.keypoints)
 
-    def time_hessian_matrix_det(self):
+    def test_hessian_matrix_det(self):
         feature.hessian_matrix_det(self.image, 4)

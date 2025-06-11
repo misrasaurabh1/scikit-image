@@ -12,17 +12,17 @@ class SetMetricsSuite:
     coords_a = np.zeros(shape, dtype=bool)
     coords_b = np.zeros(shape, dtype=bool)
 
-    def setup(self):
+    def setup_method(self):
         points_a = (1, 0)
         points_b = (5, 2)
         self.coords_a[points_a] = True
         self.coords_b[points_b] = True
 
-    def time_hausdorff_distance(self):
+    def test_hausdorff_distance(self):
         metrics.hausdorff_distance(self.coords_a, self.coords_b)
 
-    def time_modified_hausdorff_distance(self):
+    def test_modified_hausdorff_distance(self):
         metrics.hausdorff_distance(self.coords_a, self.coords_b, method="modified")
 
-    def time_hausdorff_pair(self):
+    def test_hausdorff_pair(self):
         metrics.hausdorff_pair(self.coords_a, self.coords_b)

@@ -14,7 +14,7 @@ if 'indices' in parameters and parameters['indices'].default:
 
 
 class PeakLocalMaxSuite:
-    def setup(self):
+    def setup_method(self):
         mask = np.zeros([500, 500], dtype=bool)
         x, y = np.indices((500, 500))
         x_c = x // 20 * 20 + 10
@@ -26,7 +26,7 @@ class PeakLocalMaxSuite:
         # create distance image for peak searching
         self.dist = ndi.distance_transform_edt(mask)
 
-    def time_peak_local_max(self):
+    def test_peak_local_max(self):
         peak_local_max(
             self.dist,
             labels=self.labels,

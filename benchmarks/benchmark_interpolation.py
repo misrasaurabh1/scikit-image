@@ -16,7 +16,7 @@ class InterpolationResize:
 
     """Benchmark for filter routines in scikit-image."""
 
-    def setup(self, new_shape, order, mode, dtype, anti_aliasing):
+    def setup_method(self, new_shape, order, mode, dtype, anti_aliasing):
         ndim = len(new_shape)
         if ndim == 2:
             image = np.random.random((1000, 1000))
@@ -24,23 +24,23 @@ class InterpolationResize:
             image = np.random.random((100, 100, 100))
         self.image = image.astype(dtype, copy=False)
 
-    def time_resize(self, new_shape, order, mode, dtype, anti_aliasing):
+    def test_resize(self, new_shape, order, mode, dtype, anti_aliasing):
         transform.resize(
             self.image, new_shape, order=order, mode=mode, anti_aliasing=anti_aliasing
         )
 
-    def time_rescale(self, new_shape, order, mode, dtype, anti_aliasing):
+    def test_rescale(self, new_shape, order, mode, dtype, anti_aliasing):
         scale = tuple(s2 / s1 for s2, s1 in zip(new_shape, self.image.shape))
         transform.rescale(
             self.image, scale, order=order, mode=mode, anti_aliasing=anti_aliasing
         )
 
-    def peakmem_resize(self, new_shape, order, mode, dtype, anti_aliasing):
+    def test_peakmem_resize(self, new_shape, order, mode, dtype, anti_aliasing):
         transform.resize(
             self.image, new_shape, order=order, mode=mode, anti_aliasing=anti_aliasing
         )
 
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a

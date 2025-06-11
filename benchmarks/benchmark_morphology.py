@@ -12,7 +12,7 @@ from skimage import color, data, morphology, util
 
 
 class Skeletonize3d:
-    def setup(self, *args):
+    def setup_method(self, *args):
         try:
             # use a separate skeletonize_3d function on older scikit-image
             if Version(skimage.__version__) < Version('0.16.0'):
@@ -25,10 +25,10 @@ class Skeletonize3d:
         # we stack the horse data 5 times to get an example volume
         self.image = np.stack(5 * [util.invert(data.horse())])
 
-    def time_skeletonize(self):
+    def test_skeletonize(self):
         self.skeletonize(self.image)
 
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -44,7 +44,7 @@ class Skeletonize3d:
         """
         pass
 
-    def peakmem_skeletonize(self):
+    def test_peakmem_skeletonize(self):
         self.skeletonize(self.image)
 
 
@@ -56,13 +56,13 @@ class IsotropicMorphology2D:
         (1, 3, 5, 15, 25, 40),
     ]
 
-    def setup(self, shape, radius):
+    def setup_method(self, shape, radius):
         rng = np.random.default_rng(123)
         # Create an image that is mostly True, with random isolated False areas
         # (so it will not become fully False for any of the footprints).
         self.image = rng.standard_normal(shape) < 3.5
 
-    def time_erosion(self, shape, radius, *args):
+    def test_erosion(self, shape, radius, *args):
         morphology.isotropic_erosion(self.image, radius)
 
 
@@ -78,7 +78,7 @@ class GrayMorphology2D:
         (None, "sequence", "separable", "crosses"),
     ]
 
-    def setup(self, shape, footprint, radius, decomposition):
+    def setup_method(self, shape, footprint, radius, decomposition):
         rng = np.random.default_rng(123)
         # Make an image that is mostly True, with random isolated False areas
         # (so it will not become fully False for any of the footprints).
@@ -135,7 +135,7 @@ class GrayMorphology3D:
         (None, "sequence", "separable"),
     ]
 
-    def setup(self, shape, footprint, radius, decomposition):
+    def setup_method(self, shape, footprint, radius, decomposition):
         rng = np.random.default_rng(123)
         # make an image that is mostly True, with a few isolated False areas
         self.image = rng.standard_normal(shape) > -3
@@ -169,7 +169,7 @@ class GrayReconstruction:
         (np.uint8, np.float32, np.float64),
     ]
 
-    def setup(self, shape, dtype):
+    def setup_method(self, shape, dtype):
         rng = np.random.default_rng(123)
         # make an image that is mostly True, with a few isolated False areas
         rvals = rng.integers(1, 255, size=shape).astype(dtype=dtype)
@@ -188,10 +188,10 @@ class GrayReconstruction:
         self.seed = seed
         self.mask = mask
 
-    def time_reconstruction(self, shape, dtype):
+    def test_reconstruction(self, shape, dtype):
         morphology.reconstruction(self.seed, self.mask)
 
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -207,7 +207,7 @@ class GrayReconstruction:
         """
         pass
 
-    def peakmem_reconstruction(self, shape, dtype):
+    def test_peakmem_reconstruction(self, shape, dtype):
         morphology.reconstruction(self.seed, self.mask)
 
 
@@ -215,23 +215,23 @@ class LocalMaxima:
     param_names = ["connectivity", "allow_borders"]
     params = [(1, 2), (False, True)]
 
-    def setup(self, *args):
+    def setup_method(self, *args):
         # Natural image with small extrema
         self.image = data.moon()
 
-    def time_2d(self, connectivity, allow_borders):
+    def test_2d(self, connectivity, allow_borders):
         morphology.local_maxima(
             self.image, connectivity=connectivity, allow_borders=allow_borders
         )
 
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
 
         .. [1] https://asv.readthedocs.io/en/stable/writing_benchmarks.html#peak-memory
         """
         pass
 
-    def peakmem_2d(self, connectivity, allow_borders):
+    def test_peakmem_2d(self, connectivity, allow_borders):
         morphology.local_maxima(
             self.image, connectivity=connectivity, allow_borders=allow_borders
         )
@@ -241,16 +241,16 @@ class RemoveObjectsByDistance:
     param_names = ["min_distance"]
     params = [5, 100]
 
-    def setup(self, *args):
+    def setup_method(self, *args):
         image = data.hubble_deep_field()
         image = color.rgb2gray(image)
         objects = image > 0.18  # Chosen with threshold_li
         self.labels, _ = scipy.ndimage.label(objects)
 
-    def time_remove_near_objects(self, min_distance):
+    def test_remove_near_objects(self, min_distance):
         morphology.remove_objects_by_distance(self.labels, min_distance=min_distance)
 
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -266,7 +266,7 @@ class RemoveObjectsByDistance:
         """
         pass
 
-    def peakmem_remove_near_objects(self, min_distance):
+    def test_peakmem_remove_near_objects(self, min_distance):
         morphology.remove_objects_by_distance(
             self.labels,
             min_distance=min_distance,

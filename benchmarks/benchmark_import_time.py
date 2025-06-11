@@ -15,10 +15,10 @@ class ImportSuite:
     ]
     param_names = ["package_name"]
 
-    def setup(self, package_name):
+    def setup_method(self, package_name):
         pass
 
-    def time_import(self, package_name):
+    def test_import(self, package_name):
         run(
             executable + ' -c "import ' + package_name + '"',
             capture_output=True,
