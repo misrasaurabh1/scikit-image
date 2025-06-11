@@ -69,14 +69,31 @@ def _correlate_sparse(image, kernel_shape, kernel_indices, kernel_values):
     convolution, and thus `out` will be smaller than `image` by an amount
     equal to the kernel size along each axis.
     """
-    idx, val = kernel_indices[0], kernel_values[0]
+    idx0, val0 = kernel_indices[0], kernel_values[0]
     # implementation assumes this corner is first in kernel_indices_in_values
-    if tuple(idx) != (0,) * image.ndim:
+    if tuple(idx0) != (0,) * image.ndim:
         raise RuntimeError("Unexpected initial index in kernel_indices")
-    # make a copy to avoid modifying the input image
-    out = _get_view(image, kernel_shape, idx, val).copy()
-    for idx, val in zip(kernel_indices[1:], kernel_values[1:]):
-        out += _get_view(image, kernel_shape, idx, val)
+
+    # Prepare output array from first kernel entry view.
+    sl_shift0 = _compute_slices(image.shape, kernel_shape, idx0)
+    out = image[sl_shift0].copy()
+    if val0 != 1:
+        out *= val0  # in-place, contiguous
+
+    # Precompute the slices for all subsequent kernel entries
+    # This avoids creating the tuple(list-comprehensions) inside the loop
+    slices_and_vals = [
+        (_compute_slices(image.shape, kernel_shape, idx), val)
+        for idx, val in zip(kernel_indices[1:], kernel_values[1:])
+    ]
+
+    for sl_shift, val in slices_and_vals:
+        v = image[sl_shift]
+        if val == 1:
+            out += v
+        else:
+            # in-place addition with scaling for val != 1
+            out += val * v
     return out
 
 
@@ -137,3 +154,10 @@ def correlate_sparse(image, kernel, mode='reflect'):
         values = [0.0] + values
 
     return _correlate_sparse(padded_image, kernel.shape, indices, values)
+
+
+def _compute_slices(padded_shape, kernel_shape, idx):
+    # Helper to precompute the slices once instead of per-iteration.
+    return tuple(
+        slice(c, s - (w_ - 1 - c)) for c, w_, s in zip(idx, kernel_shape, padded_shape)
+    )
