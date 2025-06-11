@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from skimage import data, filters, measure
 
@@ -18,13 +19,11 @@ def init_regionprops_data():
 
 
 class RegionpropsTableIndividual:
-    param_names = ['prop']
-    params = sorted(list(PROP_VALS))
-
-    def setup(self, prop):
+    def setup_method(self):
         self.label_image, self.intensity_image = init_regionprops_data()
 
-    def time_single_region_property(self, prop):
+    @pytest.mark.parametrize('prop', sorted(list(PROP_VALS)))
+    def test_single_region_property(self, prop):
         measure.regionprops_table(
             self.label_image, self.intensity_image, properties=[prop], cache=True
         )
@@ -33,13 +32,11 @@ class RegionpropsTableIndividual:
 
 
 class RegionpropsTableAll:
-    param_names = ['cache']
-    params = (False, True)
-
-    def setup(self, cache):
+    def setup_method(self):
         self.label_image, self.intensity_image = init_regionprops_data()
 
-    def time_regionprops_table_all(self, cache):
+    @pytest.mark.parametrize('cache', (False, True))
+    def test_regionprops_table_all(self, cache):
         measure.regionprops_table(
             self.label_image, self.intensity_image, properties=PROP_VALS, cache=cache
         )
@@ -48,30 +45,50 @@ class RegionpropsTableAll:
 
 
 class MomentsSuite:
-    params = (
-        [(64, 64), (4096, 2048), (32, 32, 32), (256, 256, 192)],
-        [np.uint8, np.float32, np.float64],
-        [1, 2, 3],
-    )
-    param_names = ['shape', 'dtype', 'order']
-
     """Benchmark for filter routines in scikit-image."""
 
-    def setup(self, shape, dtype, *args):
+    def _setup_moments(self, shape, dtype):
         rng = np.random.default_rng(1234)
         if np.dtype(dtype).kind in 'iu':
             self.image = rng.integers(0, 256, shape, dtype=dtype)
         else:
             self.image = rng.standard_normal(shape, dtype=dtype)
 
-    def time_moments_raw(self, shape, dtype, order):
+    @pytest.mark.parametrize('shape,dtype,order', [
+        (shape, dtype, order)
+        for shape in [(64, 64), (4096, 2048), (32, 32, 32), (256, 256, 192)]
+        for dtype in [np.uint8, np.float32, np.float64]
+        for order in [1, 2, 3]
+    ])
+    def test_moments_raw(self, shape, dtype, order):
+        self._setup_moments(shape, dtype)
         measure.moments(self.image)
 
-    def time_moments_central(self, shape, dtype, order):
+    @pytest.mark.parametrize('shape,dtype,order', [
+        (shape, dtype, order)
+        for shape in [(64, 64), (4096, 2048), (32, 32, 32), (256, 256, 192)]
+        for dtype in [np.uint8, np.float32, np.float64]
+        for order in [1, 2, 3]
+    ])
+    def test_moments_central(self, shape, dtype, order):
+        self._setup_moments(shape, dtype)
         measure.moments_central(self.image)
 
-    def peakmem_reference(self, shape, dtype, order):
+    @pytest.mark.parametrize('shape,dtype,order', [
+        (shape, dtype, order)
+        for shape in [(64, 64), (4096, 2048), (32, 32, 32), (256, 256, 192)]
+        for dtype in [np.uint8, np.float32, np.float64]
+        for order in [1, 2, 3]
+    ])
+    def test_peakmem_reference(self, shape, dtype, order):
         pass
 
-    def peakmem_moments_central(self, shape, dtype, order):
+    @pytest.mark.parametrize('shape,dtype,order', [
+        (shape, dtype, order)
+        for shape in [(64, 64), (4096, 2048), (32, 32, 32), (256, 256, 192)]
+        for dtype in [np.uint8, np.float32, np.float64]
+        for order in [1, 2, 3]
+    ])
+    def test_peakmem_moments_central(self, shape, dtype, order):
+        self._setup_moments(shape, dtype)
         measure.moments_central(self.image)

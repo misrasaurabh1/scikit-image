@@ -6,6 +6,7 @@ import scipy.ndimage as ndi
 from skimage.data import camera
 from skimage import restoration, data, color
 from skimage.morphology import dilation
+import pytest
 
 try:
     from skimage.morphology import disk
@@ -25,7 +26,7 @@ class RestorationSuite:
 
     timeout = 120
 
-    def setup(self):
+    def setup_method(self):
         nz = 32
         self.volume_f64 = (
             np.stack(
@@ -41,10 +42,10 @@ class RestorationSuite:
         self.volume_f64 += self.sigma * np.random.randn(*self.volume_f64.shape)
         self.volume_f32 = self.volume_f64.astype(np.float32)
 
-    def peakmem_setup(self):
+    def test_peakmem_setup(self):
         pass
 
-    def time_denoise_nl_means_f64(self):
+    def test_denoise_nl_means_f64(self):
         restoration.denoise_nl_means(
             self.volume_f64,
             patch_size=3,
@@ -55,7 +56,7 @@ class RestorationSuite:
             **_channel_kwarg(False),
         )
 
-    def time_denoise_nl_means_f32(self):
+    def test_denoise_nl_means_f32(self):
         restoration.denoise_nl_means(
             self.volume_f32,
             patch_size=3,
@@ -66,7 +67,7 @@ class RestorationSuite:
             **_channel_kwarg(False),
         )
 
-    def time_denoise_nl_means_fast_f64(self):
+    def test_denoise_nl_means_fast_f64(self):
         restoration.denoise_nl_means(
             self.volume_f64,
             patch_size=3,
@@ -77,7 +78,7 @@ class RestorationSuite:
             **_channel_kwarg(False),
         )
 
-    def time_denoise_nl_means_fast_f32(self):
+    def test_denoise_nl_means_fast_f32(self):
         restoration.denoise_nl_means(
             self.volume_f32,
             patch_size=3,
@@ -87,7 +88,7 @@ class RestorationSuite:
             fast_mode=True,
         )
 
-    def peakmem_denoise_nl_means_f64(self):
+    def test_peakmem_denoise_nl_means_f64(self):
         restoration.denoise_nl_means(
             self.volume_f64,
             patch_size=3,
@@ -98,7 +99,7 @@ class RestorationSuite:
             **_channel_kwarg(False),
         )
 
-    def peakmem_denoise_nl_means_f32(self):
+    def test_peakmem_denoise_nl_means_f32(self):
         restoration.denoise_nl_means(
             self.volume_f32,
             patch_size=3,
@@ -108,7 +109,7 @@ class RestorationSuite:
             fast_mode=False,
         )
 
-    def peakmem_denoise_nl_means_fast_f64(self):
+    def test_peakmem_denoise_nl_means_fast_f64(self):
         restoration.denoise_nl_means(
             self.volume_f64,
             patch_size=3,
@@ -119,7 +120,7 @@ class RestorationSuite:
             **_channel_kwarg(False),
         )
 
-    def peakmem_denoise_nl_means_fast_f32(self):
+    def test_peakmem_denoise_nl_means_fast_f32(self):
         restoration.denoise_nl_means(
             self.volume_f32,
             patch_size=3,
@@ -134,7 +135,7 @@ class RestorationSuite:
 class DeconvolutionSuite:
     """Benchmark for restoration routines in scikit image."""
 
-    def setup(self):
+    def setup_method(self):
         nz = 32
         self.volume_f64 = (
             np.stack(
@@ -153,20 +154,20 @@ class DeconvolutionSuite:
         self.volume_f64 += self.sigma * np.random.randn(*self.volume_f64.shape)
         self.volume_f32 = self.volume_f64.astype(np.float32)
 
-    def peakmem_setup(self):
+    def test_peakmem_setup(self):
         pass
 
-    def time_richardson_lucy_f64(self):
+    def test_richardson_lucy_f64(self):
         restoration.richardson_lucy(self.volume_f64, self.psf_f64, **rl_iter_kwarg)
 
-    def time_richardson_lucy_f32(self):
+    def test_richardson_lucy_f32(self):
         restoration.richardson_lucy(self.volume_f32, self.psf_f32, **rl_iter_kwarg)
 
     # use iterations=1 for peak-memory cases to save time
-    def peakmem_richardson_lucy_f64(self):
+    def test_peakmem_richardson_lucy_f64(self):
         restoration.richardson_lucy(self.volume_f64, self.psf_f64, **rl_iter_kwarg)
 
-    def peakmem_richardson_lucy_f32(self):
+    def test_peakmem_richardson_lucy_f32(self):
         restoration.richardson_lucy(self.volume_f32, self.psf_f32, **rl_iter_kwarg)
 
 
@@ -175,13 +176,11 @@ class RollingBall:
 
     timeout = 120
 
-    def time_rollingball(self, radius):
+    @pytest.mark.parametrize('radius', [25, 50, 100, 200])
+    def test_rollingball(self, radius):
         restoration.rolling_ball(data.coins(), radius=radius)
 
-    time_rollingball.params = [25, 50, 100, 200]
-    time_rollingball.param_names = ["radius"]
-
-    def peakmem_reference(self, *args):
+    def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -197,41 +196,35 @@ class RollingBall:
         """
         pass
 
-    def peakmem_rollingball(self, radius):
+    @pytest.mark.parametrize('radius', [25, 50, 100, 200])
+    def test_peakmem_rollingball(self, radius):
         restoration.rolling_ball(data.coins(), radius=radius)
 
-    peakmem_rollingball.params = [25, 50, 100, 200]
-    peakmem_rollingball.param_names = ["radius"]
-
-    def time_rollingball_nan(self, radius):
+    @pytest.mark.parametrize('radius', [25, 50, 100, 200])
+    def test_rollingball_nan(self, radius):
         image = data.coins().astype(float)
         pos = np.arange(np.min(image.shape))
         image[pos, pos] = np.nan
         restoration.rolling_ball(image, radius=radius, nansafe=True)
 
-    time_rollingball_nan.params = [25, 50, 100, 200]
-    time_rollingball_nan.param_names = ["radius"]
-
-    def time_rollingball_ndim(self):
+    def test_rollingball_ndim(self):
         from skimage.restoration._rolling_ball import ellipsoid_kernel
 
         image = data.cells3d()[:, 1, ...]
         kernel = ellipsoid_kernel((1, 100, 100), 100)
         restoration.rolling_ball(image, kernel=kernel)
 
-    time_rollingball_ndim.setup = _skip_slow
+    test_rollingball_ndim.setup = _skip_slow
 
-    def time_rollingball_parallel(self, workers):
+    @pytest.mark.parametrize('workers', [0, 2, 4, 8])
+    def test_rollingball_parallel(self, workers):
         restoration.rolling_ball(data.coins(), radius=100, workers=workers)
-
-    time_rollingball_parallel.params = (0, 2, 4, 8)
-    time_rollingball_parallel.param_names = ["workers"]
 
 
 class Inpaint:
     """Benchmark inpainting algorithm."""
 
-    def setup(self):
+    def setup_method(self):
         image = data.astronaut()
 
         # Create mask with six block defect regions
@@ -265,12 +258,12 @@ class Inpaint:
         self.image_defect_gray = color.rgb2gray(image)
         self.mask = mask
 
-    def time_inpaint_rgb(self):
+    def test_inpaint_rgb(self):
         restoration.inpaint_biharmonic(
             self.image_defect, self.mask, **_channel_kwarg(True)
         )
 
-    def time_inpaint_grey(self):
+    def test_inpaint_grey(self):
         restoration.inpaint_biharmonic(
             self.image_defect_gray, self.mask, **_channel_kwarg(False)
         )

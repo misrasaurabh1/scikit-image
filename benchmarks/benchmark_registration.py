@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import ndimage as ndi
+import pytest
 
 from skimage.color import rgb2gray
 from skimage import data, img_as_float
@@ -25,28 +26,24 @@ except ImportError:
 class RegistrationSuite:
     """Benchmark for registration routines in scikit-image."""
 
-    param_names = ["dtype"]
-    params = [(np.float32, np.float64)]
-
-    def setup(self, *args):
+    def setup_method(self):
         I0, I1, _ = data.stereo_motorcycle()
         self.I0 = rgb2gray(I0)
         self.I1 = rgb2gray(I1)
 
-    def time_tvl1(self, dtype):
+    @pytest.mark.parametrize('dtype', [np.float32, np.float64])
+    def test_tvl1(self, dtype):
         registration.optical_flow_tvl1(self.I0, self.I1, dtype=dtype)
 
-    def time_ilk(self, dtype):
+    @pytest.mark.parametrize('dtype', [np.float32, np.float64])
+    def test_ilk(self, dtype):
         registration.optical_flow_ilk(self.I0, self.I1, dtype=dtype)
 
 
 class PhaseCrossCorrelationRegistration:
     """Benchmarks for registration.phase_cross_correlation in scikit-image"""
 
-    param_names = ["ndims", "image_size", "upsample_factor", "dtype"]
-    params = [(2, 3), (32, 100), (1, 5, 10), (np.complex64, np.complex128)]
-
-    def setup(self, ndims, image_size, upsample_factor, dtype, *args):
+    def _setup_phase_cross_correlation(self, ndims, image_size, dtype):
         if phase_cross_correlation is None:
             raise NotImplementedError("phase_cross_correlation unavailable")
         shifts = (-2.3, 1.7, 5.4, -3.2)[:ndims]
@@ -55,7 +52,15 @@ class PhaseCrossCorrelationRegistration:
         self.shifted_image = ndi.fourier_shift(self.reference_image, shifts)
         self.shifted_image = self.shifted_image.astype(dtype, copy=False)
 
-    def time_phase_cross_correlation(self, ndims, image_size, upsample_factor, *args):
+    @pytest.mark.parametrize('ndims,image_size,upsample_factor,dtype', [
+        (ndims, image_size, upsample_factor, dtype)
+        for ndims in [2, 3]
+        for image_size in [32, 100]
+        for upsample_factor in [1, 5, 10]
+        for dtype in [np.complex64, np.complex128]
+    ])
+    def test_phase_cross_correlation(self, ndims, image_size, upsample_factor, dtype):
+        self._setup_phase_cross_correlation(ndims, image_size, dtype)
         phase_cross_correlation(
             self.reference_image,
             self.shifted_image,
@@ -63,7 +68,14 @@ class PhaseCrossCorrelationRegistration:
             space="fourier",
         )
 
-    def peakmem_reference(self, *args):
+    @pytest.mark.parametrize('ndims,image_size,upsample_factor,dtype', [
+        (ndims, image_size, upsample_factor, dtype)
+        for ndims in [2, 3]
+        for image_size in [32, 100]
+        for upsample_factor in [1, 5, 10]
+        for dtype in [np.complex64, np.complex128]
+    ])
+    def test_peakmem_reference(self, ndims, image_size, upsample_factor, dtype):
         """Provide reference for memory measurement with empty benchmark.
         Peakmem benchmarks measure the maximum amount of RAM used by a
         function. However, this maximum also includes the memory used
@@ -77,9 +89,17 @@ class PhaseCrossCorrelationRegistration:
         """
         pass
 
-    def peakmem_phase_cross_correlation(
-        self, ndims, image_size, upsample_factor, *args
+    @pytest.mark.parametrize('ndims,image_size,upsample_factor,dtype', [
+        (ndims, image_size, upsample_factor, dtype)
+        for ndims in [2, 3]
+        for image_size in [32, 100]
+        for upsample_factor in [1, 5, 10]
+        for dtype in [np.complex64, np.complex128]
+    ])
+    def test_peakmem_phase_cross_correlation(
+        self, ndims, image_size, upsample_factor, dtype
     ):
+        self._setup_phase_cross_correlation(ndims, image_size, dtype)
         phase_cross_correlation(
             self.reference_image,
             self.shifted_image,

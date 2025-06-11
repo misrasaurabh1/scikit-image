@@ -9,7 +9,7 @@ from skimage import color, data, filters, graph, morphology
 class GraphSuite:
     """Benchmark for pixel graph routines in scikit-image."""
 
-    def setup(self):
+    def setup_method(self):
         retina = color.rgb2gray(data.retina())
         t0, _ = filters.threshold_multiotsu(retina, classes=3)
         mask = retina > t0
@@ -26,8 +26,8 @@ class GraphSuite:
         small_skeleton = morphology.skeletonize(binary2)
         self.g, self.n = graph.pixel_graph(small_skeleton, connectivity=2)
 
-    def time_build_pixel_graph(self):
+    def test_build_pixel_graph(self):
         graph.pixel_graph(self.skeleton, connectivity=2)
 
-    def time_central_pixel(self):
+    def test_central_pixel(self):
         graph.central_pixel(self.g, self.n)

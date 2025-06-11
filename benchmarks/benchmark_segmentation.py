@@ -5,6 +5,7 @@ See "Writing benchmarks" in the asv docs for more information.
 
 import numpy as np
 from numpy.lib import NumpyVersion as Version
+import pytest
 
 import skimage
 from skimage import data, filters, segmentation
@@ -21,7 +22,7 @@ except ImportError:
 class SlicSegmentation:
     """Benchmark for segmentation routines in scikit-image."""
 
-    def setup(self):
+    def setup_method(self):
         self.image = np.random.random((200, 200, 100))
         self.image[:100, :100, :] += 1
         self.image[150:, 150:, :] += 0.5
@@ -33,7 +34,7 @@ class SlicSegmentation:
         else:
             self.slic_kwargs = {}
 
-    def time_slic_basic(self):
+    def test_slic_basic(self):
         segmentation.slic(
             self.image,
             enforce_connectivity=False,
@@ -41,7 +42,7 @@ class SlicSegmentation:
             **self.slic_kwargs,
         )
 
-    def time_slic_basic_multichannel(self):
+    def test_slic_basic_multichannel(self):
         segmentation.slic(
             self.image,
             enforce_connectivity=False,
@@ -49,7 +50,7 @@ class SlicSegmentation:
             **self.slic_kwargs,
         )
 
-    def peakmem_setup(self):
+    def test_peakmem_setup(self):
         """peakmem includes the memory used by setup.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -66,7 +67,7 @@ class SlicSegmentation:
         """
         pass
 
-    def peakmem_slic_basic(self):
+    def test_peakmem_slic_basic(self):
         segmentation.slic(
             self.image,
             enforce_connectivity=False,
@@ -74,7 +75,7 @@ class SlicSegmentation:
             **self.slic_kwargs,
         )
 
-    def peakmem_slic_basic_multichannel(self):
+    def test_peakmem_slic_basic_multichannel(self):
         segmentation.slic(
             self.image,
             enforce_connectivity=False,
@@ -86,7 +87,7 @@ class SlicSegmentation:
 class MaskSlicSegmentation(SlicSegmentation):
     """Benchmark for segmentation routines in scikit-image."""
 
-    def setup(self):
+    def setup_method(self):
         try:
             mask = np.zeros((64, 64)) > 0
             mask[10:-10, 10:-10] = 1
@@ -105,7 +106,7 @@ class MaskSlicSegmentation(SlicSegmentation):
         else:
             self.slic_kwargs = {}
 
-    def time_mask_slic(self):
+    def test_mask_slic(self):
         segmentation.slic(
             self.image,
             enforce_connectivity=False,
@@ -113,7 +114,7 @@ class MaskSlicSegmentation(SlicSegmentation):
             **_channel_kwarg(False),
         )
 
-    def time_mask_slic_multichannel(self):
+    def test_mask_slic_multichannel(self):
         segmentation.slic(
             self.image,
             enforce_connectivity=False,
@@ -123,16 +124,25 @@ class MaskSlicSegmentation(SlicSegmentation):
 
 
 class Watershed:
-    param_names = ["seed_count", "connectivity", "compactness"]
-    params = [(5, 500), (1, 2), (0, 0.01)]
-
-    def setup(self, *args):
+    def setup_method(self):
         self.image = filters.sobel(data.coins())
 
-    def time_watershed(self, seed_count, connectivity, compactness):
+    @pytest.mark.parametrize('seed_count,connectivity,compactness', [
+        (seed_count, connectivity, compactness)
+        for seed_count in [5, 500]
+        for connectivity in [1, 2]
+        for compactness in [0, 0.01]
+    ])
+    def test_watershed(self, seed_count, connectivity, compactness):
         watershed(self.image, seed_count, connectivity, compactness=compactness)
 
-    def peakmem_reference(self, *args):
+    @pytest.mark.parametrize('seed_count,connectivity,compactness', [
+        (seed_count, connectivity, compactness)
+        for seed_count in [5, 500]
+        for connectivity in [1, 2]
+        for compactness in [0, 0.01]
+    ])
+    def test_peakmem_reference(self, seed_count, connectivity, compactness):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -148,5 +158,11 @@ class Watershed:
         """
         pass
 
-    def peakmem_watershed(self, seed_count, connectivity, compactness):
+    @pytest.mark.parametrize('seed_count,connectivity,compactness', [
+        (seed_count, connectivity, compactness)
+        for seed_count in [5, 500]
+        for connectivity in [1, 2]
+        for compactness in [0, 0.01]
+    ])
+    def test_peakmem_watershed(self, seed_count, connectivity, compactness):
         watershed(self.image, seed_count, connectivity, compactness=compactness)
