@@ -77,10 +77,12 @@ def dtype_limits(image, clip_negative=False):
     imin, imax : tuple
         Lower and upper intensity limits.
     """
-    imin, imax = dtype_range[image.dtype.type]
+    t = image.dtype.type
+    lim = dtype_range[t]
+    # Avoid tuple unpacking to skip creating a new tuple:
     if clip_negative:
-        imin = 0
-    return imin, imax
+        return 0, lim[1]
+    return lim
 
 
 def _dtype_itemsize(itemsize, *dtypes):
@@ -282,7 +284,7 @@ def _convert(image, dtype, force_copy=False, uniform=False):
         return image
 
     if not (dtype_in in _supported_types and dtype_out in _supported_types):
-        raise ValueError(f'Cannot convert from {dtypeobj_in} to ' f'{dtypeobj_out}.')
+        raise ValueError(f'Cannot convert from {dtypeobj_in} to {dtypeobj_out}.')
 
     if kind_in in 'ui':
         imin_in = np.iinfo(dtype_in).min
