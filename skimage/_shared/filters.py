@@ -10,10 +10,14 @@ from collections.abc import Iterable
 import numpy as np
 from scipy import ndimage as ndi
 
-from .._shared.utils import (
-    _supported_float_type,
-    convert_to_float,
-)
+from .._shared.utils import _supported_float_type, convert_to_float
+
+"""Filters used across multiple skimage submodules.
+
+These are defined here to avoid circular imports.
+
+The unit tests remain under skimage/filters/tests/
+"""
 
 
 def gaussian(

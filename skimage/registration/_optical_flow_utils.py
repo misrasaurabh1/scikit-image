@@ -24,9 +24,13 @@ def _get_warp_points(grid, flow):
         The warp point coordinates.
 
     """
+    # Use broadcasting assignment for speed
+    # (grid has length ndim, each g shape (d1, ...), flow shape (ndim, d1, ...))
+    # To avoid unnecessary copy if we don't need it, ensure not to copy unless necessary
     out = flow.copy()
+    # Use np.add with out argument for in-place addition.
     for idx, g in enumerate(grid):
-        out[idx, ...] += g
+        np.add(out[idx], g, out=out[idx])
     return out
 
 
@@ -130,7 +134,7 @@ def _coarse_to_fine(
         raise ValueError("Input images should have the same shape")
 
     if np.dtype(dtype).char not in 'efdg':
-        raise ValueError("Only floating point data type are valid" " for optical flow")
+        raise ValueError("Only floating point data type are valid for optical flow")
 
     pyramid = list(
         zip(

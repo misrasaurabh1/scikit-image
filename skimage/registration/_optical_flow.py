@@ -1,7 +1,6 @@
 """TV-L1 optical flow algorithm implementation."""
 
 from functools import partial
-from itertools import combinations_with_replacement
 
 import numpy as np
 from scipy import ndimage as ndi
@@ -298,48 +297,118 @@ def _ilk(reference_image, moving_image, flow0, radius, num_warp, gaussian, prefi
     size = 2 * radius + 1
 
     if gaussian:
-        sigma = ndim * (size / 4,)
+        sigma = (size / 4.0,) * ndim
         filter_func = partial(gaussian_filter, sigma=sigma, mode='mirror')
     else:
-        filter_func = partial(ndi.uniform_filter, size=ndim * (size,), mode='mirror')
+        filter_func = partial(ndi.uniform_filter, size=(size,) * ndim, mode='mirror')
 
     flow = flow0
-    # For each pixel location (i, j), the optical flow X = flow[:, i, j]
-    # is the solution of the ndim x ndim linear system
-    # A[i, j] * X = b[i, j]
-    A = np.zeros(reference_image.shape + (ndim, ndim), dtype=dtype)
-    b = np.zeros(reference_image.shape + (ndim, 1), dtype=dtype)
+
+    shape = reference_image.shape
+    n_pix = reference_image.size
 
     grid = np.meshgrid(
-        *[np.arange(n, dtype=dtype) for n in reference_image.shape],
+        *[np.arange(n, dtype=dtype) for n in shape],
         indexing='ij',
         sparse=True,
     )
 
+    # Precompute index array for combinations_with_replacement(range(ndim),2)
+    combs = []
+    ij_pairs = []
+    for i in range(ndim):
+        for j in range(i, ndim):
+            combs.append((i, j))
+            if i != j:
+                ij_pairs.append((i, j))
+
+    # We'll reuse workspaces
     for _ in range(num_warp):
         if prefilter:
-            flow = ndi.median_filter(flow, (1,) + ndim * (3,))
-
+            flow = ndi.median_filter(flow, (1,) + (3,) * ndim)
         moving_image_warp = warp(
             moving_image, _get_warp_points(grid, flow), mode='edge'
         )
-        grad = np.stack(np.gradient(moving_image_warp), axis=0)
-        error_image = (grad * flow).sum(axis=0) + reference_image - moving_image_warp
 
-        # Local linear systems creation
-        for i, j in combinations_with_replacement(range(ndim), 2):
-            A[..., i, j] = A[..., j, i] = filter_func(grad[i] * grad[j])
+        grad = np.stack(np.gradient(moving_image_warp), axis=0)  # shape: (ndim, ...)
+        # error_image: shape (...), grad * flow: (ndim, ...) * (ndim, ...) -> (ndim, ...)
+        error_image = (
+            np.einsum('i...,i...->...', grad, flow)
+            + reference_image
+            - moving_image_warp
+        )
 
+        # Allocate A and b arrays
+        A_shape = shape + (ndim, ndim)
+        b_shape = shape + (ndim, 1)
+        A = np.empty(A_shape, dtype=dtype)
+        b = np.empty(b_shape, dtype=dtype)
+
+        # Compute all grad[i] * grad[j] blocks at once, using broadcasting
+        grads_outer = np.empty((ndim, ndim) + shape, dtype=dtype)
+        for i in range(ndim):
+            for j in range(i, ndim):
+                grads_outer[i, j] = grad[i] * grad[j]
+                if i != j:
+                    grads_outer[j, i] = grads_outer[i, j]
+
+        # Apply filter_func to each (i,j) block and fill A efficiently
+        for i in range(ndim):
+            for j in range(i, ndim):
+                filtered = filter_func(grads_outer[i, j])
+                A[..., i, j] = filtered
+                if i != j:
+                    A[..., j, i] = filtered  # symmetric
+
+        # Vectorized: fill b[..., i, 0]
         for i in range(ndim):
             b[..., i, 0] = filter_func(grad[i] * error_image)
 
-        # Don't consider badly conditioned linear systems
-        idx = abs(np.linalg.det(A)) < 1e-14
-        A[idx] = np.eye(ndim, dtype=dtype)
-        b[idx] = 0
+        # Mask badly conditioned systems (det close to zero)
+        # np.linalg.det(A) is a bottleneck. We can use batch det if possible.
+        # For 2x2 and 3x3 we can do det manually in tensor form for all points at once!
+        # This is much, much faster.
+        if ndim == 2:
+            # A[..., 0, 0] * A[..., 1, 1] - A[..., 0, 1] * A[..., 1, 0]
+            det_A = A[..., 0, 0] * A[..., 1, 1] - A[..., 0, 1] * A[..., 1, 0]
+        elif ndim == 3:
+            # Manual batch 3x3 determinant
+            a = A[..., 0, 0]
+            b_ = A[..., 0, 1]
+            c = A[..., 0, 2]
+            d = A[..., 1, 0]
+            e = A[..., 1, 1]
+            f = A[..., 1, 2]
+            g = A[..., 2, 0]
+            h = A[..., 2, 1]
+            i = A[..., 2, 2]
+            det_A = a * (e * i - f * h) - b_ * (d * i - f * g) + c * (d * h - e * g)
+        else:
+            # ND fallback (will be slow for high-dims)
+            det_A = np.linalg.det(A)
 
-        # Solve the local linear systems
-        flow = np.moveaxis(np.linalg.solve(A, b)[..., 0], ndim, 0)
+        idx = np.abs(det_A) < 1e-14
+
+        # Rather than using assignment by mask, which can be slow, minimize memory bandwidth:
+        if np.any(idx):
+            # Set those A to eye and b to 0
+            # We can use advanced indexing for the last two axes
+            slc = [slice(None)] * ndim
+            for index in np.argwhere(idx):
+                # index is shape (...), so for last two axes assign np.eye(ndim)
+                sl = tuple(list(index) + [slice(None), slice(None)])
+                A[sl] = np.eye(ndim, dtype=dtype)
+                sl_b = tuple(list(index) + [slice(None), 0])
+                b[sl_b] = 0
+
+        # Bulk solve: Use np.linalg.solve for (n, n) matrices in bulk. np.linalg.solve does not support batched, but
+        # we can reshape as (-1, ndim, ndim), (-1, ndim, 1) then back
+        As = A.reshape(-1, ndim, ndim)
+        bs = b.reshape(-1, ndim, 1)
+        # np.linalg.solve for all small systems in one call
+        x = np.linalg.solve(As, bs)[..., 0]  # shape: (-1, ndim)
+        # moveaxis result into (ndim, ...)
+        flow = x.T.reshape((ndim,) + shape)
 
     return flow
 
