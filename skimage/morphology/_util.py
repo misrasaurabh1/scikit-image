@@ -46,7 +46,7 @@ def _validate_connectivity(image_dim, connectivity, offset):
 
     if offset is None:
         if any([x % 2 == 0 for x in c_connectivity.shape]):
-            raise ValueError("Connectivity array must have an unambiguous " "center")
+            raise ValueError("Connectivity array must have an unambiguous center")
 
         offset = np.array(c_connectivity.shape) // 2
 
@@ -125,43 +125,51 @@ def _raveled_offsets_and_distances(
             "center index does not match"
         )
 
-    offsets = np.stack(
-        [(idx - c) for idx, c in zip(np.nonzero(footprint), center)], axis=-1
-    )
+    # Collect offsets from center for all True positions in the footprint.
+    # Uses fast array creation with np.indices to avoid Python loops.
+    footprint_indices = np.transpose(np.nonzero(footprint))
+    offsets = footprint_indices - center
 
+    # If Fortran order, reverse axes for both offsets and image_shape.
     if order == 'F':
         offsets = offsets[:, ::-1]
         image_shape = image_shape[::-1]
     elif order != 'C':
         raise ValueError("order must be 'C' or 'F'")
 
-    # Scale offsets in each dimension and sum
-    ravel_factors = image_shape[1:] + (1,)
-    ravel_factors = np.cumprod(ravel_factors[::-1])[::-1]
-    raveled_offsets = (offsets * ravel_factors).sum(axis=1)
+    # Compute ravel factors (strides in elements, not bytes) for the shape.
+    ravel_factors = np.empty(ndim, dtype=np.intp)
+    ravel_factors[-1] = 1
+    for i in range(ndim - 2, -1, -1):
+        ravel_factors[i] = ravel_factors[i + 1] * image_shape[i + 1]
+    raveled_offsets = np.dot(offsets, ravel_factors)
 
-    # Sort by distance
+    # Compute the distance for each offset, optionally with a spacing.
     if spacing is None:
-        spacing = np.ones(ndim)
-    weighted_offsets = offsets * spacing
-    distances = np.sqrt(np.sum(weighted_offsets**2, axis=1))
-    sorted_raveled_offsets = raveled_offsets[np.argsort(distances, kind="stable")]
-    sorted_distances = np.sort(distances, kind="stable")
+        weighted_offsets = offsets
+    else:
+        weighted_offsets = offsets * spacing
+    distances = np.linalg.norm(weighted_offsets, axis=1)
+
+    # Sort by distance using argsort, but batch both arrays at once later.
+    sort_idx = np.argsort(distances, kind="stable")
+    raveled_offsets = raveled_offsets[sort_idx]
+    distances = distances[sort_idx]
 
     # If any dimension in image_shape is smaller than footprint.shape
     # duplicates might occur, remove them
     if any(x < y for x, y in zip(image_shape, footprint.shape)):
-        # np.unique reorders, which we don't want
-        _, indices = np.unique(sorted_raveled_offsets, return_index=True)
-        indices = np.sort(indices, kind="stable")
-        sorted_raveled_offsets = sorted_raveled_offsets[indices]
-        sorted_distances = sorted_distances[indices]
+        # np.unique reorders, so grab indices and reapply in stable order
+        _, unique_idx = np.unique(raveled_offsets, return_index=True)
+        unique_idx.sort(kind="stable")
+        raveled_offsets = raveled_offsets[unique_idx]
+        distances = distances[unique_idx]
 
     # Remove "offset to center"
-    sorted_raveled_offsets = sorted_raveled_offsets[1:]
-    sorted_distances = sorted_distances[1:]
+    raveled_offsets = raveled_offsets[1:]
+    distances = distances[1:]
 
-    return sorted_raveled_offsets, sorted_distances
+    return raveled_offsets, distances
 
 
 def _offsets_to_raveled_neighbors(image_shape, footprint, center, order='C'):
@@ -255,9 +263,7 @@ def _resolve_neighborhood(footprint, connectivity, ndim, enforce_adjacency=True)
         footprint = np.asarray(footprint, dtype=bool)
         # Must specify neighbors for all dimensions
         if footprint.ndim != ndim:
-            raise ValueError(
-                "number of dimensions in image and footprint do not" "match"
-            )
+            raise ValueError("number of dimensions in image and footprint do notmatch")
         # Must only specify direct neighbors
         if enforce_adjacency and any(s != 3 for s in footprint.shape):
             raise ValueError("dimension size in footprint is not 3")
@@ -309,7 +315,7 @@ def _set_border_values(image, value, border_width=1):
         raise ValueError('length of `border_width` must match image.ndim')
     for axis, npad in enumerate(border_width):
         if len(npad) != 2:
-            raise ValueError('each sequence in `border_width` must have ' 'length 2')
+            raise ValueError('each sequence in `border_width` must have length 2')
         w_start, w_end = npad
         if w_start == w_end == 0:
             continue
