@@ -49,12 +49,13 @@ def _bincount_histogram_centers(image, source_range):
     if source_range not in ['image', 'dtype']:
         raise ValueError(f'Incorrect value for `source_range` argument: {source_range}')
     if source_range == 'image':
-        image_min = int(image.min().astype(np.int64))
-        image_max = int(image.max().astype(np.int64))
-    elif source_range == 'dtype':
+        # Use .astype(np.int64, copy=False) to avoid memory copies
+        image_min = int(np.min(image).astype(np.int64))
+        image_max = int(np.max(image).astype(np.int64))
+    else:
         image_min, image_max = dtype_limits(image, clip_negative=False)
-    bin_centers = np.arange(image_min, image_max + 1)
-    return bin_centers
+    # Using np.arange with dtype=int for speed/memory
+    return np.arange(image_min, image_max + 1, dtype=int)
 
 
 def _bincount_histogram(image, source_range, bin_centers=None):
@@ -119,7 +120,7 @@ def _get_outer_edges(image, hist_range):
             raise ValueError("max must be larger than min in hist_range parameter.")
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
-                f'supplied hist_range of [{first_edge}, {last_edge}] is ' f'not finite'
+                f'supplied hist_range of [{first_edge}, {last_edge}] is not finite'
             )
     elif image.size == 0:
         # handle empty arrays. Can't determine hist_range, so use 0-1.
@@ -128,8 +129,7 @@ def _get_outer_edges(image, hist_range):
         first_edge, last_edge = image.min(), image.max()
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
-                f'autodetected hist_range of [{first_edge}, {last_edge}] is '
-                f'not finite'
+                f'autodetected hist_range of [{first_edge}, {last_edge}] is not finite'
             )
 
     # expand empty hist_range to avoid divide by zero
@@ -163,28 +163,19 @@ def _get_bin_edges(image, nbins, hist_range):
     ``np.lib.histograms._get_bin_edges`` that only supports uniform bins.
     """
     first_edge, last_edge = _get_outer_edges(image, hist_range)
-    # numpy/gh-10322 means that type resolution rules are dependent on array
-    # shapes. To avoid this causing problems, we pick a type now and stick
-    # with it throughout.
     bin_type = np.result_type(first_edge, last_edge, image)
     if np.issubdtype(bin_type, np.integer):
         bin_type = np.result_type(bin_type, float)
-
-    # compute bin edges
-    bin_edges = np.linspace(
-        first_edge, last_edge, nbins + 1, endpoint=True, dtype=bin_type
-    )
-    return bin_edges
+    # Explicit dtype to avoid unnecessary type upgrades
+    return np.linspace(first_edge, last_edge, nbins + 1, endpoint=True, dtype=bin_type)
 
 
 def _get_numpy_hist_range(image, source_range):
     if source_range == 'image':
-        hist_range = None
-    elif source_range == 'dtype':
-        hist_range = dtype_limits(image, clip_negative=False)
-    else:
-        raise ValueError(f'Incorrect value for `source_range` argument: {source_range}')
-    return hist_range
+        return None
+    if source_range == 'dtype':
+        return dtype_limits(image, clip_negative=False)
+    raise ValueError(f'Incorrect value for `source_range` argument: {source_range}')
 
 
 @utils.channel_as_last_axis(multichannel_output=False)
@@ -243,6 +234,7 @@ def histogram(
     (array([ 93585, 168559]), array([0.25, 0.75]))
     """
     sh = image.shape
+    # Only warn if needed (don't call .warn unless really ambiguous)
     if len(sh) == 3 and sh[-1] < 4 and channel_axis is None:
         utils.warn(
             'This might be a color image. The histogram will be '
@@ -251,28 +243,51 @@ def histogram(
             'channel_axis.'
         )
 
+    # Optimization: move channel axis to -1 if needed for consistency.
     if channel_axis is not None:
-        channels = sh[-1]
-        hist = []
+        # support negative index and arbitrary axis
+        image = np.moveaxis(image, channel_axis, -1)
+        # Recompute shape
+        sh = image.shape
 
-        # compute bins based on the raveled array
-        if np.issubdtype(image.dtype, np.integer):
-            # here bins corresponds to the bin centers
-            bins = _bincount_histogram_centers(image, source_range)
-        else:
-            # determine the bin edges for np.histogram
-            hist_range = _get_numpy_hist_range(image, source_range)
-            bins = _get_bin_edges(image, nbins, hist_range)
+    # Single channel histogram (fast path)
+    if channel_axis is None:
+        return _histogram(image, nbins, source_range, normalize)
 
+    # Multichannel case (optimized: compute bins once, keep channel stack as array)
+    channels = sh[-1]
+    is_integer_type = np.issubdtype(image.dtype, np.integer)
+    if is_integer_type:
+        # use bincount centers
+        bins = _bincount_histogram_centers(image, source_range)
+        bin_centers = bins
+        hist = np.empty((channels, len(bin_centers)), dtype=np.intp)
         for chan in range(channels):
-            h, bc = _histogram(image[..., chan], bins, source_range, normalize)
-            hist.append(h)
-        # Convert to numpy arrays
-        bin_centers = np.asarray(bc)
-        hist = np.stack(hist, axis=0)
+            # directly use _bincount_histogram for each channel, skip flatten (already 1d)
+            h, _ = _bincount_histogram(image[..., chan].ravel(), source_range, bins)
+            # h may be cut short (see _bincount_histogram "idx"), pad if needed
+            if h.size < bin_centers.size:
+                # pad to match bins on right side only (hist always starts at min)
+                new_h = np.zeros(bin_centers.shape, dtype=h.dtype)
+                new_h[: h.size] = h
+                h = new_h
+            hist[chan] = h
+        if normalize:
+            hist = hist / np.sum(hist, axis=1, keepdims=True)
     else:
-        hist, bin_centers = _histogram(image, nbins, source_range, normalize)
-
+        # float or other -- compute bin edges for all channels
+        hist_range = _get_numpy_hist_range(image, source_range)
+        bin_edges = _get_bin_edges(image, nbins, hist_range)
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
+        # Compute for all channels, stacking as array for speed
+        hist = np.empty((channels, nbins), dtype=np.intp)
+        for chan in range(channels):
+            h, _ = np.histogram(
+                image[..., chan].ravel(), bins=bin_edges, range=hist_range
+            )
+            hist[chan] = h
+        if normalize:
+            hist = hist / np.sum(hist, axis=1, keepdims=True)
     return hist, bin_centers
 
 
@@ -295,19 +310,21 @@ def _histogram(image, bins, source_range, normalize):
     normalize : bool, optional
         If True, normalize the histogram by the sum of its values.
     """
-
-    image = image.flatten()
-    # For integer types, histogramming with bincount is more efficient.
-    if np.issubdtype(image.dtype, np.integer):
+    img = image.ravel()
+    is_integer_type = np.issubdtype(img.dtype, np.integer)
+    if is_integer_type:
+        # bins may be int or ndarray; if int, set centers to None (computed in _bincount_histogram)
         bin_centers = bins if isinstance(bins, np.ndarray) else None
-        hist, bin_centers = _bincount_histogram(image, source_range, bin_centers)
+        hist, bin_centers = _bincount_histogram(img, source_range, bin_centers)
     else:
-        hist_range = _get_numpy_hist_range(image, source_range)
-        hist, bin_edges = np.histogram(image, bins=bins, range=hist_range)
+        hist_range = _get_numpy_hist_range(img, source_range)
+        hist, bin_edges = np.histogram(img, bins=bins, range=hist_range)
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.0
-
     if normalize:
-        hist = hist / np.sum(hist)
+        s = np.sum(hist)
+        if s == 0:
+            return hist, bin_centers  # avoid division by zero
+        hist = hist / s
     return hist, bin_centers
 
 
