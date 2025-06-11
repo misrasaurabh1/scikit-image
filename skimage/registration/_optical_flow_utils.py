@@ -24,9 +24,13 @@ def _get_warp_points(grid, flow):
         The warp point coordinates.
 
     """
+    # Use broadcasting assignment for speed
+    # (grid has length ndim, each g shape (d1, ...), flow shape (ndim, d1, ...))
+    # To avoid unnecessary copy if we don't need it, ensure not to copy unless necessary
     out = flow.copy()
+    # Use np.add with out argument for in-place addition.
     for idx, g in enumerate(grid):
-        out[idx, ...] += g
+        np.add(out[idx], g, out=out[idx])
     return out
 
 
@@ -51,14 +55,16 @@ def _resize_flow(flow, shape):
     """
 
     scale = [n / o for n, o in zip(shape, flow.shape[1:])]
-    scale_factor = np.array(scale, dtype=flow.dtype)
 
-    for _ in shape:
-        scale_factor = scale_factor[..., np.newaxis]
+    # Efficiently resize the flow
+    resized_flow = ndi.zoom(flow, [1] + scale, order=0, mode='nearest', prefilter=False)
 
-    rflow = scale_factor * ndi.zoom(
-        flow, [1] + scale, order=0, mode='nearest', prefilter=False
-    )
+    # Reshape for broadcasting: (channels, 1, 1, ...)
+    axes = (flow.ndim - 1) * (1,)  # (1, 1) for (C, H, W), or (1,)*N
+    scale_factor = np.array(scale, dtype=flow.dtype).reshape((-1,) + axes)
+
+    # Multiply directly, avoiding repeated newaxis expansion
+    rflow = resized_flow * scale_factor
 
     return rflow
 
@@ -130,7 +136,7 @@ def _coarse_to_fine(
         raise ValueError("Input images should have the same shape")
 
     if np.dtype(dtype).char not in 'efdg':
-        raise ValueError("Only floating point data type are valid" " for optical flow")
+        raise ValueError("Only floating point data type are valid for optical flow")
 
     pyramid = list(
         zip(
