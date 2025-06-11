@@ -6,6 +6,7 @@ See "Writing benchmarks" in the asv docs for more information.
 import numpy as np
 from numpy.lib import NumpyVersion as Version
 import scipy.ndimage
+import pytest
 
 import skimage
 from skimage import color, data, morphology, util
@@ -50,19 +51,19 @@ class Skeletonize3d:
 
 class IsotropicMorphology2D:
     # skip rectangle as roughly equivalent to square
-    param_names = ["shape", "radius"]
-    params = [
-        ((512, 512),),
-        (1, 3, 5, 15, 25, 40),
-    ]
-
-    def setup_method(self, shape, radius):
+    def setup_method(self, shape):
         rng = np.random.default_rng(123)
         # Create an image that is mostly True, with random isolated False areas
         # (so it will not become fully False for any of the footprints).
         self.image = rng.standard_normal(shape) < 3.5
 
-    def test_erosion(self, shape, radius, *args):
+    @pytest.mark.parametrize('shape,radius', [
+        (shape, radius)
+        for shape in [((512, 512),)]
+        for radius in [1, 3, 5, 15, 25, 40]
+    ])
+    def test_erosion(self, shape, radius):
+        self.setup_method(shape[0])
         morphology.isotropic_erosion(self.image, radius)
 
 
@@ -70,14 +71,6 @@ class IsotropicMorphology2D:
 
 
 class GrayMorphology2D:
-    param_names = ["shape", "footprint", "radius", "decomposition"]
-    params = [
-        ((512, 512),),
-        ("square", "diamond", "octagon", "disk", "ellipse", "star"),
-        (1, 3, 5, 15, 25, 40),
-        (None, "sequence", "separable", "crosses"),
-    ]
-
     def setup_method(self, shape, footprint, radius, decomposition):
         rng = np.random.default_rng(123)
         # Make an image that is mostly True, with random isolated False areas
@@ -121,20 +114,20 @@ class GrayMorphology2D:
             else:
                 self.footprint = fp_func(radius, radius, **footprint_kwargs)
 
-    def time_erosion(self, shape, footprint, radius, *args):
+    @pytest.mark.parametrize('shape,footprint,radius,decomposition', [
+        (shape, footprint, radius, decomposition)
+        for shape in [((512, 512),)]
+        for footprint in ["square", "diamond", "octagon", "disk", "ellipse", "star"]
+        for radius in [1, 3, 5, 15, 25, 40]
+        for decomposition in [None, "sequence", "separable", "crosses"]
+    ])
+    def test_erosion(self, shape, footprint, radius, decomposition):
+        self.setup_method(shape[0], footprint, radius, decomposition)
         morphology.erosion(self.image, self.footprint)
 
 
 class GrayMorphology3D:
     # skip rectangle as roughly equivalent to square
-    param_names = ["shape", "footprint", "radius", "decomposition"]
-    params = [
-        ((128, 128, 128),),
-        ("ball", "cube", "octahedron"),
-        (1, 3, 5, 10),
-        (None, "sequence", "separable"),
-    ]
-
     def setup_method(self, shape, footprint, radius, decomposition):
         rng = np.random.default_rng(123)
         # make an image that is mostly True, with a few isolated False areas
@@ -157,18 +150,20 @@ class GrayMorphology3D:
         elif footprint in ["ball", "octahedron"]:
             self.footprint = fp_func(radius, **footprint_kwargs)
 
-    def time_erosion(self, shape, footprint, radius, *args):
+    @pytest.mark.parametrize('shape,footprint,radius,decomposition', [
+        (shape, footprint, radius, decomposition)
+        for shape in [((128, 128, 128),)]
+        for footprint in ["ball", "cube", "octahedron"]
+        for radius in [1, 3, 5, 10]
+        for decomposition in [None, "sequence", "separable"]
+    ])
+    def test_erosion(self, shape, footprint, radius, decomposition):
+        self.setup_method(shape[0], footprint, radius, decomposition)
         morphology.erosion(self.image, self.footprint)
 
 
 class GrayReconstruction:
     # skip rectangle as roughly equivalent to square
-    param_names = ["shape", "dtype"]
-    params = [
-        ((10, 10), (64, 64), (1200, 1200), (96, 96, 96)),
-        (np.uint8, np.float32, np.float64),
-    ]
-
     def setup_method(self, shape, dtype):
         rng = np.random.default_rng(123)
         # make an image that is mostly True, with a few isolated False areas
@@ -188,10 +183,21 @@ class GrayReconstruction:
         self.seed = seed
         self.mask = mask
 
+    @pytest.mark.parametrize('shape,dtype', [
+        (shape, dtype)
+        for shape in [(10, 10), (64, 64), (1200, 1200), (96, 96, 96)]
+        for dtype in [np.uint8, np.float32, np.float64]
+    ])
     def test_reconstruction(self, shape, dtype):
+        self.setup_method(shape, dtype)
         morphology.reconstruction(self.seed, self.mask)
 
-    def test_peakmem_reference(self, *args):
+    @pytest.mark.parametrize('shape,dtype', [
+        (shape, dtype)
+        for shape in [(10, 10), (64, 64), (1200, 1200), (96, 96, 96)]
+        for dtype in [np.uint8, np.float32, np.float64]
+    ])
+    def test_peakmem_reference(self, shape, dtype):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -207,30 +213,48 @@ class GrayReconstruction:
         """
         pass
 
+    @pytest.mark.parametrize('shape,dtype', [
+        (shape, dtype)
+        for shape in [(10, 10), (64, 64), (1200, 1200), (96, 96, 96)]
+        for dtype in [np.uint8, np.float32, np.float64]
+    ])
     def test_peakmem_reconstruction(self, shape, dtype):
+        self.setup_method(shape, dtype)
         morphology.reconstruction(self.seed, self.mask)
 
 
 class LocalMaxima:
-    param_names = ["connectivity", "allow_borders"]
-    params = [(1, 2), (False, True)]
-
-    def setup_method(self, *args):
+    def setup_method(self):
         # Natural image with small extrema
         self.image = data.moon()
 
+    @pytest.mark.parametrize('connectivity,allow_borders', [
+        (connectivity, allow_borders)
+        for connectivity in [1, 2]
+        for allow_borders in [False, True]
+    ])
     def test_2d(self, connectivity, allow_borders):
         morphology.local_maxima(
             self.image, connectivity=connectivity, allow_borders=allow_borders
         )
 
-    def test_peakmem_reference(self, *args):
+    @pytest.mark.parametrize('connectivity,allow_borders', [
+        (connectivity, allow_borders)
+        for connectivity in [1, 2]
+        for allow_borders in [False, True]
+    ])
+    def test_peakmem_reference(self, connectivity, allow_borders):
         """Provide reference for memory measurement with empty benchmark.
 
         .. [1] https://asv.readthedocs.io/en/stable/writing_benchmarks.html#peak-memory
         """
         pass
 
+    @pytest.mark.parametrize('connectivity,allow_borders', [
+        (connectivity, allow_borders)
+        for connectivity in [1, 2]
+        for allow_borders in [False, True]
+    ])
     def test_peakmem_2d(self, connectivity, allow_borders):
         morphology.local_maxima(
             self.image, connectivity=connectivity, allow_borders=allow_borders
@@ -238,19 +262,18 @@ class LocalMaxima:
 
 
 class RemoveObjectsByDistance:
-    param_names = ["min_distance"]
-    params = [5, 100]
-
-    def setup_method(self, *args):
+    def setup_method(self):
         image = data.hubble_deep_field()
         image = color.rgb2gray(image)
         objects = image > 0.18  # Chosen with threshold_li
         self.labels, _ = scipy.ndimage.label(objects)
 
+    @pytest.mark.parametrize('min_distance', [5, 100])
     def test_remove_near_objects(self, min_distance):
         morphology.remove_objects_by_distance(self.labels, min_distance=min_distance)
 
-    def test_peakmem_reference(self, *args):
+    @pytest.mark.parametrize('min_distance', [5, 100])
+    def test_peakmem_reference(self, min_distance):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -266,6 +289,7 @@ class RemoveObjectsByDistance:
         """
         pass
 
+    @pytest.mark.parametrize('min_distance', [5, 100])
     def test_peakmem_remove_near_objects(self, min_distance):
         morphology.remove_objects_by_distance(
             self.labels,

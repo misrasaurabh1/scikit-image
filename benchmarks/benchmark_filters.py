@@ -1,6 +1,7 @@
 # See "Writing benchmarks" in the asv docs for more information.
 # https://asv.readthedocs.io/en/latest/writing_benchmarks.html
 import numpy as np
+import pytest
 
 from skimage import data, filters, color
 from skimage.filters.thresholding import threshold_li
@@ -35,16 +36,15 @@ class FiltersSobel3D:
 class MultiOtsu:
     """Benchmarks for MultiOtsu threshold."""
 
-    param_names = ['classes']
-    params = [3, 4, 5]
-
-    def setup_method(self, *args):
+    def setup_method(self):
         self.image = data.camera()
 
+    @pytest.mark.parametrize('classes', [3, 4, 5])
     def test_threshold_multiotsu(self, classes):
         filters.threshold_multiotsu(self.image, classes=classes)
 
-    def test_peakmem_reference(self, *args):
+    @pytest.mark.parametrize('classes', [3, 4, 5])
+    def test_peakmem_reference(self, classes):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -60,6 +60,7 @@ class MultiOtsu:
         """
         pass
 
+    @pytest.mark.parametrize('classes', [3, 4, 5])
     def test_peakmem_threshold_multiotsu(self, classes):
         filters.threshold_multiotsu(self.image, classes=classes)
 

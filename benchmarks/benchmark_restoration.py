@@ -6,6 +6,7 @@ import scipy.ndimage as ndi
 from skimage.data import camera
 from skimage import restoration, data, color
 from skimage.morphology import dilation
+import pytest
 
 try:
     from skimage.morphology import disk
@@ -175,11 +176,9 @@ class RollingBall:
 
     timeout = 120
 
+    @pytest.mark.parametrize('radius', [25, 50, 100, 200])
     def test_rollingball(self, radius):
         restoration.rolling_ball(data.coins(), radius=radius)
-
-    test_rollingball.params = [25, 50, 100, 200]
-    test_rollingball.param_names = ["radius"]
 
     def test_peakmem_reference(self, *args):
         """Provide reference for memory measurement with empty benchmark.
@@ -197,20 +196,16 @@ class RollingBall:
         """
         pass
 
+    @pytest.mark.parametrize('radius', [25, 50, 100, 200])
     def test_peakmem_rollingball(self, radius):
         restoration.rolling_ball(data.coins(), radius=radius)
 
-    test_peakmem_rollingball.params = [25, 50, 100, 200]
-    test_peakmem_rollingball.param_names = ["radius"]
-
+    @pytest.mark.parametrize('radius', [25, 50, 100, 200])
     def test_rollingball_nan(self, radius):
         image = data.coins().astype(float)
         pos = np.arange(np.min(image.shape))
         image[pos, pos] = np.nan
         restoration.rolling_ball(image, radius=radius, nansafe=True)
-
-    test_rollingball_nan.params = [25, 50, 100, 200]
-    test_rollingball_nan.param_names = ["radius"]
 
     def test_rollingball_ndim(self):
         from skimage.restoration._rolling_ball import ellipsoid_kernel
@@ -221,11 +216,9 @@ class RollingBall:
 
     test_rollingball_ndim.setup = _skip_slow
 
+    @pytest.mark.parametrize('workers', [0, 2, 4, 8])
     def test_rollingball_parallel(self, workers):
         restoration.rolling_ball(data.coins(), radius=100, workers=workers)
-
-    test_rollingball_parallel.params = (0, 2, 4, 8)
-    test_rollingball_parallel.param_names = ["workers"]
 
 
 class Inpaint:

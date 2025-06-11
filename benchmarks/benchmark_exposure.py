@@ -7,6 +7,7 @@ import numpy as np
 from skimage import data, img_as_float
 from skimage.transform import rescale
 from skimage import exposure
+import pytest
 
 
 class ExposureSuite:
@@ -43,12 +44,10 @@ class ExposureSuite:
 
 
 class MatchHistogramsSuite:
-    param_names = ["shape", "dtype", "multichannel"]
-    params = [
-        ((64, 64), (256, 256), (1024, 1024)),
-        (np.uint8, np.uint32, np.float32, np.float64),
-        (False, True),
-    ]
+    """Benchmark for exposure routines in scikit-image."""
+
+    def setup_method(self):
+        pass
 
     def _tile_to_shape(self, image, shape, multichannel):
         n_tile = tuple(math.ceil(s / n) for s, n in zip(shape, image.shape))
@@ -59,9 +58,7 @@ class MatchHistogramsSuite:
         sl = tuple(slice(s) for s in shape)
         return image[sl]
 
-    """Benchmark for exposure routines in scikit-image."""
-
-    def setup_method(self, shape, dtype, multichannel):
+    def _setup_match_histograms(self, shape, dtype, multichannel):
         self.image = data.moon().astype(dtype, copy=False)
         self.reference = data.camera().astype(dtype, copy=False)
 
@@ -70,7 +67,14 @@ class MatchHistogramsSuite:
         channel_axis = -1 if multichannel else None
         self.kwargs = {'channel_axis': channel_axis}
 
-    def test_match_histogram(self, *args):
+    @pytest.mark.parametrize('shape,dtype,multichannel', [
+        (shape, dtype, multichannel)
+        for shape in [(64, 64), (256, 256), (1024, 1024)]
+        for dtype in [np.uint8, np.uint32, np.float32, np.float64]
+        for multichannel in [False, True]
+    ])
+    def test_match_histogram(self, shape, dtype, multichannel):
+        self._setup_match_histograms(shape, dtype, multichannel)
         exposure.match_histograms(self.image, self.reference, **self.kwargs)
 
     def test_peakmem_reference(self, *args):
@@ -89,5 +93,12 @@ class MatchHistogramsSuite:
         """
         pass
 
-    def test_peakmem_match_histogram(self, *args):
+    @pytest.mark.parametrize('shape,dtype,multichannel', [
+        (shape, dtype, multichannel)
+        for shape in [(64, 64), (256, 256), (1024, 1024)]
+        for dtype in [np.uint8, np.uint32, np.float32, np.float64]
+        for multichannel in [False, True]
+    ])
+    def test_peakmem_match_histogram(self, shape, dtype, multichannel):
+        self._setup_match_histograms(shape, dtype, multichannel)
         exposure.match_histograms(self.image, self.reference, **self.kwargs)

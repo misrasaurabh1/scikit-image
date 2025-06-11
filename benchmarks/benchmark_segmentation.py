@@ -5,6 +5,7 @@ See "Writing benchmarks" in the asv docs for more information.
 
 import numpy as np
 from numpy.lib import NumpyVersion as Version
+import pytest
 
 import skimage
 from skimage import data, filters, segmentation
@@ -123,16 +124,25 @@ class MaskSlicSegmentation(SlicSegmentation):
 
 
 class Watershed:
-    param_names = ["seed_count", "connectivity", "compactness"]
-    params = [(5, 500), (1, 2), (0, 0.01)]
-
-    def setup(self, *args):
+    def setup_method(self):
         self.image = filters.sobel(data.coins())
 
+    @pytest.mark.parametrize('seed_count,connectivity,compactness', [
+        (seed_count, connectivity, compactness)
+        for seed_count in [5, 500]
+        for connectivity in [1, 2]
+        for compactness in [0, 0.01]
+    ])
     def test_watershed(self, seed_count, connectivity, compactness):
         watershed(self.image, seed_count, connectivity, compactness=compactness)
 
-    def test_peakmem_reference(self, *args):
+    @pytest.mark.parametrize('seed_count,connectivity,compactness', [
+        (seed_count, connectivity, compactness)
+        for seed_count in [5, 500]
+        for connectivity in [1, 2]
+        for compactness in [0, 0.01]
+    ])
+    def test_peakmem_reference(self, seed_count, connectivity, compactness):
         """Provide reference for memory measurement with empty benchmark.
 
         Peakmem benchmarks measure the maximum amount of RAM used by a
@@ -148,5 +158,11 @@ class Watershed:
         """
         pass
 
+    @pytest.mark.parametrize('seed_count,connectivity,compactness', [
+        (seed_count, connectivity, compactness)
+        for seed_count in [5, 500]
+        for connectivity in [1, 2]
+        for compactness in [0, 0.01]
+    ])
     def test_peakmem_watershed(self, seed_count, connectivity, compactness):
         watershed(self.image, seed_count, connectivity, compactness=compactness)
