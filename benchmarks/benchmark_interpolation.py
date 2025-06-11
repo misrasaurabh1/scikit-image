@@ -8,7 +8,7 @@ from skimage import transform
 class InterpolationResize:
     """Benchmark for filter routines in scikit-image."""
 
-    def setup_method(self, new_shape, dtype):
+    def _setup_interpolation(self, new_shape, dtype):
         ndim = len(new_shape)
         if ndim == 2:
             image = np.random.random((1000, 1000))
@@ -25,7 +25,7 @@ class InterpolationResize:
         for anti_aliasing in [True]
     ])
     def test_resize(self, new_shape, order, mode, dtype, anti_aliasing):
-        self.setup_method(new_shape, dtype)
+        self._setup_interpolation(new_shape, dtype)
         transform.resize(
             self.image, new_shape, order=order, mode=mode, anti_aliasing=anti_aliasing
         )
@@ -39,7 +39,7 @@ class InterpolationResize:
         for anti_aliasing in [True]
     ])
     def test_rescale(self, new_shape, order, mode, dtype, anti_aliasing):
-        self.setup_method(new_shape, dtype)
+        self._setup_interpolation(new_shape, dtype)
         scale = tuple(s2 / s1 for s2, s1 in zip(new_shape, self.image.shape))
         transform.rescale(
             self.image, scale, order=order, mode=mode, anti_aliasing=anti_aliasing
@@ -54,7 +54,7 @@ class InterpolationResize:
         for anti_aliasing in [True]
     ])
     def test_peakmem_resize(self, new_shape, order, mode, dtype, anti_aliasing):
-        self.setup_method(new_shape, dtype)
+        self._setup_interpolation(new_shape, dtype)
         transform.resize(
             self.image, new_shape, order=order, mode=mode, anti_aliasing=anti_aliasing
         )

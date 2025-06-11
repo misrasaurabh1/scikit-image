@@ -43,7 +43,7 @@ class RegistrationSuite:
 class PhaseCrossCorrelationRegistration:
     """Benchmarks for registration.phase_cross_correlation in scikit-image"""
 
-    def setup_method(self, ndims, image_size, dtype):
+    def _setup_phase_cross_correlation(self, ndims, image_size, dtype):
         if phase_cross_correlation is None:
             raise NotImplementedError("phase_cross_correlation unavailable")
         shifts = (-2.3, 1.7, 5.4, -3.2)[:ndims]
@@ -60,7 +60,7 @@ class PhaseCrossCorrelationRegistration:
         for dtype in [np.complex64, np.complex128]
     ])
     def test_phase_cross_correlation(self, ndims, image_size, upsample_factor, dtype):
-        self.setup_method(ndims, image_size, dtype)
+        self._setup_phase_cross_correlation(ndims, image_size, dtype)
         phase_cross_correlation(
             self.reference_image,
             self.shifted_image,
@@ -99,7 +99,7 @@ class PhaseCrossCorrelationRegistration:
     def test_peakmem_phase_cross_correlation(
         self, ndims, image_size, upsample_factor, dtype
     ):
-        self.setup_method(ndims, image_size, dtype)
+        self._setup_phase_cross_correlation(ndims, image_size, dtype)
         phase_cross_correlation(
             self.reference_image,
             self.shifted_image,

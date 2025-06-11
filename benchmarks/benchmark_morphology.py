@@ -51,7 +51,7 @@ class Skeletonize3d:
 
 class IsotropicMorphology2D:
     # skip rectangle as roughly equivalent to square
-    def setup_method(self, shape):
+    def _setup_isotropic(self, shape):
         rng = np.random.default_rng(123)
         # Create an image that is mostly True, with random isolated False areas
         # (so it will not become fully False for any of the footprints).
@@ -63,7 +63,7 @@ class IsotropicMorphology2D:
         for radius in [1, 3, 5, 15, 25, 40]
     ])
     def test_erosion(self, shape, radius):
-        self.setup_method(shape[0])
+        self._setup_isotropic(shape[0])
         morphology.isotropic_erosion(self.image, radius)
 
 
@@ -71,7 +71,7 @@ class IsotropicMorphology2D:
 
 
 class GrayMorphology2D:
-    def setup_method(self, shape, footprint, radius, decomposition):
+    def _setup_gray_morph_2d(self, shape, footprint, radius, decomposition):
         rng = np.random.default_rng(123)
         # Make an image that is mostly True, with random isolated False areas
         # (so it will not become fully False for any of the footprints).
@@ -122,13 +122,13 @@ class GrayMorphology2D:
         for decomposition in [None, "sequence", "separable", "crosses"]
     ])
     def test_erosion(self, shape, footprint, radius, decomposition):
-        self.setup_method(shape[0], footprint, radius, decomposition)
+        self._setup_gray_morph_2d(shape[0], footprint, radius, decomposition)
         morphology.erosion(self.image, self.footprint)
 
 
 class GrayMorphology3D:
     # skip rectangle as roughly equivalent to square
-    def setup_method(self, shape, footprint, radius, decomposition):
+    def _setup_gray_morph_3d(self, shape, footprint, radius, decomposition):
         rng = np.random.default_rng(123)
         # make an image that is mostly True, with a few isolated False areas
         self.image = rng.standard_normal(shape) > -3
@@ -158,13 +158,13 @@ class GrayMorphology3D:
         for decomposition in [None, "sequence", "separable"]
     ])
     def test_erosion(self, shape, footprint, radius, decomposition):
-        self.setup_method(shape[0], footprint, radius, decomposition)
+        self._setup_gray_morph_3d(shape[0], footprint, radius, decomposition)
         morphology.erosion(self.image, self.footprint)
 
 
 class GrayReconstruction:
     # skip rectangle as roughly equivalent to square
-    def setup_method(self, shape, dtype):
+    def _setup_reconstruction(self, shape, dtype):
         rng = np.random.default_rng(123)
         # make an image that is mostly True, with a few isolated False areas
         rvals = rng.integers(1, 255, size=shape).astype(dtype=dtype)
@@ -189,7 +189,7 @@ class GrayReconstruction:
         for dtype in [np.uint8, np.float32, np.float64]
     ])
     def test_reconstruction(self, shape, dtype):
-        self.setup_method(shape, dtype)
+        self._setup_reconstruction(shape, dtype)
         morphology.reconstruction(self.seed, self.mask)
 
     @pytest.mark.parametrize('shape,dtype', [
@@ -219,7 +219,7 @@ class GrayReconstruction:
         for dtype in [np.uint8, np.float32, np.float64]
     ])
     def test_peakmem_reconstruction(self, shape, dtype):
-        self.setup_method(shape, dtype)
+        self._setup_reconstruction(shape, dtype)
         morphology.reconstruction(self.seed, self.mask)
 
 

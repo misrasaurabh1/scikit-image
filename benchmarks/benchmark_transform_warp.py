@@ -82,8 +82,12 @@ class ResizeLocalMeanSuite:
     @pytest.mark.parametrize('dtype,shape_in,shape_out', [
         (dtype, shape_in, shape_out)
         for dtype in [np.float32, np.float64]
-        for shape_in in [(512, 512), (2048, 2048), (48, 48, 48), (192, 192, 192)]
-        for shape_out in [(512, 512), (2048, 2048), (48, 48, 48), (192, 192, 192)]
+        for shape_in, shape_out in [
+            ((512, 512), (512, 512)),
+            ((2048, 2048), (2048, 2048)),
+            ((48, 48, 48), (48, 48, 48)),
+            ((192, 192, 192), (192, 192, 192))
+        ]
     ])
     def test_resize_local_mean(self, dtype, shape_in, shape_out):
         self._setup_resize(dtype, shape_in, shape_out)

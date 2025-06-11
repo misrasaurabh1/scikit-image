@@ -47,7 +47,7 @@ class RegionpropsTableAll:
 class MomentsSuite:
     """Benchmark for filter routines in scikit-image."""
 
-    def setup_method(self, shape, dtype):
+    def _setup_moments(self, shape, dtype):
         rng = np.random.default_rng(1234)
         if np.dtype(dtype).kind in 'iu':
             self.image = rng.integers(0, 256, shape, dtype=dtype)
@@ -61,7 +61,7 @@ class MomentsSuite:
         for order in [1, 2, 3]
     ])
     def test_moments_raw(self, shape, dtype, order):
-        self.setup_method(shape, dtype)
+        self._setup_moments(shape, dtype)
         measure.moments(self.image)
 
     @pytest.mark.parametrize('shape,dtype,order', [
@@ -71,7 +71,7 @@ class MomentsSuite:
         for order in [1, 2, 3]
     ])
     def test_moments_central(self, shape, dtype, order):
-        self.setup_method(shape, dtype)
+        self._setup_moments(shape, dtype)
         measure.moments_central(self.image)
 
     @pytest.mark.parametrize('shape,dtype,order', [
@@ -90,5 +90,5 @@ class MomentsSuite:
         for order in [1, 2, 3]
     ])
     def test_peakmem_moments_central(self, shape, dtype, order):
-        self.setup_method(shape, dtype)
+        self._setup_moments(shape, dtype)
         measure.moments_central(self.image)
