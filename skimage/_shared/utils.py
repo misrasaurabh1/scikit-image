@@ -520,8 +520,7 @@ class deprecate_func(_DecoratorBaseClass):
 
     def __call__(self, func):
         message = (
-            f"`{func.__name__}` is deprecated since version "
-            f"{self.deprecated_version}"
+            f"`{func.__name__}` is deprecated since version {self.deprecated_version}"
         )
         if self.removed_version:
             message += f" and will be removed in version {self.removed_version}."
@@ -613,9 +612,7 @@ def safe_as_int(val, atol=1e-3):
     try:
         np.testing.assert_allclose(mod, 0, atol=atol)
     except AssertionError:
-        raise ValueError(
-            f'Integer argument required but received ' f'{val}, check inputs.'
-        )
+        raise ValueError(f'Integer argument required but received {val}, check inputs.')
 
     return np.round(val).astype(np.int64)
 
@@ -776,7 +773,7 @@ def _validate_interpolation_order(image_dtype, order):
         return 0 if image_dtype == bool else 1
 
     if order < 0 or order > 5:
-        raise ValueError("Spline interpolation order has to be in the " "range 0-5.")
+        raise ValueError("Spline interpolation order has to be in the range 0-5.")
 
     if image_dtype == bool and order != 0:
         raise ValueError(
@@ -798,28 +795,20 @@ def _to_np_mode(mode):
 
 def _to_ndimage_mode(mode):
     """Convert from `numpy.pad` mode name to the corresponding ndimage mode."""
-    mode_translation_dict = dict(
-        constant='constant',
-        edge='nearest',
-        symmetric='reflect',
-        reflect='mirror',
-        wrap='wrap',
-    )
-    if mode not in mode_translation_dict:
+    if mode not in _mode_translation_dict:
         raise ValueError(
             f"Unknown mode: '{mode}', or cannot translate mode. The "
             f"mode should be one of 'constant', 'edge', 'symmetric', "
             f"'reflect', or 'wrap'. See the documentation of numpy.pad for "
             f"more info."
         )
-    return _fix_ndimage_mode(mode_translation_dict[mode])
+    return _fix_ndimage_mode(_mode_translation_dict[mode])
 
 
 def _fix_ndimage_mode(mode):
     # SciPy 1.6.0 introduced grid variants of constant and wrap which
     # have less surprising behavior for images. Use these when available
-    grid_modes = {'constant': 'grid-constant', 'wrap': 'grid-wrap'}
-    return grid_modes.get(mode, mode)
+    return _grid_modes.get(mode, mode)
 
 
 new_float_type = {
@@ -889,3 +878,17 @@ def as_binary_ndarray(array, *, variable_name):
                 f"safely cast to boolean array."
             )
     return np.asarray(array, dtype=bool)
+
+
+_mode_translation_dict = {
+    'constant': 'constant',
+    'edge': 'nearest',
+    'symmetric': 'reflect',
+    'reflect': 'mirror',
+    'wrap': 'wrap',
+}
+
+_grid_modes = {
+    'constant': 'grid-constant',
+    'wrap': 'grid-wrap',
+}
