@@ -29,21 +29,23 @@ def _footprint_is_sequence(footprint):
     if hasattr(footprint, '__array_interface__'):
         return False
 
-    def _validate_sequence_element(t):
-        return (
-            isinstance(t, Sequence)
-            and len(t) == 2
-            and hasattr(t[0], '__array_interface__')
-            and isinstance(t[1], Integral)
-        )
-
+    # Inline sequence element validation for speed
     if isinstance(footprint, Sequence):
-        if not all(_validate_sequence_element(t) for t in footprint):
-            raise ValueError(
-                "All elements of footprint sequence must be a 2-tuple where "
-                "the first element of the tuple is an ndarray and the second "
-                "is an integer indicating the number of iterations."
-            )
+        for t in footprint:
+            # Check tuple/list of length 2 with required properties
+            if not isinstance(t, Sequence) or len(t) != 2:
+                raise ValueError(
+                    "All elements of footprint sequence must be a 2-tuple where "
+                    "the first element of the tuple is an ndarray and the second "
+                    "is an integer indicating the number of iterations."
+                )
+            t0, t1 = t  # local unpacking for fast access
+            if not (hasattr(t0, '__array_interface__') and isinstance(t1, Integral)):
+                raise ValueError(
+                    "All elements of footprint sequence must be a 2-tuple where "
+                    "the first element of the tuple is an ndarray and the second "
+                    "is an integer indicating the number of iterations."
+                )
     else:
         raise ValueError("footprint must be either an ndarray or Sequence")
     return True
@@ -445,8 +447,7 @@ def _nsphere_series_decomposition(radius, ndim, dtype=np.uint8):
     max_radius = precomputed_decompositions.shape[0]
     if radius > max_radius:
         raise ValueError(
-            f"precomputed {ndim}D decomposition unavailable for "
-            f"radius > {max_radius}"
+            f"precomputed {ndim}D decomposition unavailable for radius > {max_radius}"
         )
     num_t_series, num_diamond, num_square = precomputed_decompositions[radius]
 
