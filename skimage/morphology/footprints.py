@@ -426,7 +426,6 @@ def _nsphere_series_decomposition(radius, ndim, dtype=np.uint8):
     .. [2] https://en.wikipedia.org/wiki/Hexadecagon
     .. [3] https://en.wikipedia.org/wiki/Rhombicuboctahedron
     """
-
     if radius == 1:
         # for radius 1 just use the exact shape (3,) * ndim solution
         kwargs = dict(dtype=dtype, strict_radius=False, decomposition=None)
@@ -445,23 +444,24 @@ def _nsphere_series_decomposition(radius, ndim, dtype=np.uint8):
     max_radius = precomputed_decompositions.shape[0]
     if radius > max_radius:
         raise ValueError(
-            f"precomputed {ndim}D decomposition unavailable for "
-            f"radius > {max_radius}"
+            f"precomputed {ndim}D decomposition unavailable for radius > {max_radius}"
         )
     num_t_series, num_diamond, num_square = precomputed_decompositions[radius]
 
     sequence = []
+    # The for-loop structure is preferred for clarity and performance
     if num_t_series > 0:
-        # shape (3,) * ndim "T-shaped" footprints
         all_t = _t_shaped_element_series(ndim=ndim, dtype=dtype)
-        [sequence.append((t, num_t_series)) for t in all_t]
+        for t in all_t:
+            sequence.append((t, num_t_series))
     if num_diamond > 0:
         d = np.zeros((3,) * ndim, dtype=dtype)
-        sl = [slice(1, 2)] * ndim
+        # Use slice array once outside the loop for efficiency
+        base_slice = [slice(1, 2)] * ndim
         for ax in range(ndim):
+            sl = list(base_slice)
             sl[ax] = slice(None)
             d[tuple(sl)] = 1
-            sl[ax] = slice(1, 2)
         sequence.append((d, num_diamond))
     if num_square > 0:
         sq = np.ones((3,) * ndim, dtype=dtype)
@@ -584,11 +584,15 @@ def disk(radius, dtype=np.uint8, *, strict_radius=True, decomposition=None):
            :DOI:`10.1117/12.23608`
     """
     if decomposition is None:
-        L = np.arange(-radius, radius + 1)
-        X, Y = np.meshgrid(L, L)
+        # Avoid meshgrid and minimize temporary memory: use broadcasting
+        r = radius
         if not strict_radius:
-            radius += 0.5
-        return np.array((X**2 + Y**2) <= radius**2, dtype=dtype)
+            r = radius + 0.5
+        L = np.arange(-radius, radius + 1)
+        # Use broadcasting to compute the mask directly, avoiding meshgrid
+        D = L[:, None] ** 2 + L**2  # (N,1)+(N,) broadcasting: gives (N,N) array
+        # (faster than meshgrid, less memory allocation)
+        return (D <= r**2).astype(dtype)
     elif decomposition == 'sequence':
         sequence = _nsphere_series_decomposition(radius, ndim=2, dtype=dtype)
     elif decomposition == 'crosses':
@@ -625,9 +629,14 @@ def _cross_decomposition(footprint, dtype=np.uint8):
            Image Processing, (1 November 1990).
            :DOI:`10.1117/12.23608`
     """
-    quadrant = footprint[footprint.shape[0] // 2 :, footprint.shape[1] // 2 :]
-    col_sums = quadrant.sum(0, dtype=int)
-    col_sums = np.concatenate((col_sums, np.asarray([0], dtype=int)))
+    # Optimization: use views and only one memory allocation, avoid repeated slicing
+    s0, s1 = footprint.shape
+    mid0, mid1 = s0 // 2, s1 // 2
+    quadrant = footprint[mid0:, mid1:]
+    col_sums = np.empty(quadrant.shape[1] + 1, dtype=int)
+    np.sum(quadrant, axis=0, dtype=int, out=col_sums[:-1])
+    col_sums[-1] = 0
+
     i_prev = 0
     idx = {}
     sum0 = 0
@@ -637,15 +646,16 @@ def _cross_decomposition(footprint, dtype=np.uint8):
                 continue
             key = (col_sums[i_prev] - col_sums[i], i - i_prev)
             sum0 += key[0]
-            if key not in idx:
-                idx[key] = 1
-            else:
+            if key in idx:
                 idx[key] += 1
+            else:
+                idx[key] = 1
             i_prev = i
     n = quadrant.shape[0] - 1 - sum0
     if n > 0:
         key = (n, 0)
         idx[key] = idx.get(key, 0) + 1
+    # List comprehension for result is fine - main cost is _cross
     return tuple([(_cross(r0, r1, dtype), n) for (r0, r1), n in idx.items()])
 
 
