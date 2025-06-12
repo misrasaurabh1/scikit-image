@@ -119,7 +119,7 @@ def _get_outer_edges(image, hist_range):
             raise ValueError("max must be larger than min in hist_range parameter.")
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
-                f'supplied hist_range of [{first_edge}, {last_edge}] is ' f'not finite'
+                f'supplied hist_range of [{first_edge}, {last_edge}] is not finite'
             )
     elif image.size == 0:
         # handle empty arrays. Can't determine hist_range, so use 0-1.
@@ -128,8 +128,7 @@ def _get_outer_edges(image, hist_range):
         first_edge, last_edge = image.min(), image.max()
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
-                f'autodetected hist_range of [{first_edge}, {last_edge}] is '
-                f'not finite'
+                f'autodetected hist_range of [{first_edge}, {last_edge}] is not finite'
             )
 
     # expand empty hist_range to avoid divide by zero
@@ -618,9 +617,14 @@ def _assert_non_negative(image):
 
 def _adjust_gamma_u8(image, gamma, gain):
     """LUT based implementation of gamma adjustment."""
-    lut = 255 * gain * (np.linspace(0, 1, 256) ** gamma)
-    lut = np.minimum(np.rint(lut), 255).astype('uint8')
-    return lut[image]
+    key = (gamma, gain)
+    lut = _lut_cache.get(key)
+    if lut is None:
+        # Precompute LUT once per unique (gamma, gain) pair -- avoids recomputation
+        arr = np.arange(256, dtype=np.float32) / 255
+        lut = np.clip(np.rint(255 * gain * (arr**gamma)), 0, 255).astype('uint8')
+        _lut_cache[key] = lut
+    return lut[image]  # Advanced indexing, very fast for uint8 image
 
 
 def adjust_gamma(image, gamma=1, gain=1):
@@ -849,3 +853,6 @@ def is_low_contrast(
     ratio = (limits[1] - limits[0]) / (dlimits[1] - dlimits[0])
 
     return ratio < fraction_threshold
+
+
+_lut_cache = {}
