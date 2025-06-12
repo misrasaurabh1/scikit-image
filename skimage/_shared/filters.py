@@ -10,10 +10,14 @@ from collections.abc import Iterable
 import numpy as np
 from scipy import ndimage as ndi
 
-from .._shared.utils import (
-    _supported_float_type,
-    convert_to_float,
-)
+from .._shared.utils import _supported_float_type, convert_to_float
+
+"""Filters used across multiple skimage submodules.
+
+These are defined here to avoid circular imports.
+
+The unit tests remain under skimage/filters/tests/
+"""
 
 
 def gaussian(
@@ -117,20 +121,43 @@ def gaussian(
     >>> filtered_img = ski.filters.gaussian(image, sigma=1, channel_axis=-1)
 
     """
-    if np.any(np.asarray(sigma) < 0.0):
-        raise ValueError("Sigma values less than zero are not valid")
-    if channel_axis is not None:
-        # do not filter across channels
-        if not isinstance(sigma, Iterable):
-            sigma = [sigma] * (image.ndim - 1)
-        if len(sigma) == image.ndim - 1:
-            sigma = list(sigma)
-            sigma.insert(channel_axis % image.ndim, 0)
+    # Fast fail for negative sigma without always converting to np.asarray:
+    if isinstance(sigma, Iterable) and not isinstance(sigma, str):
+        sigmas = tuple(sigma)
+        if any(s < 0.0 for s in sigmas):
+            raise ValueError("Sigma values less than zero are not valid")
+    else:
+        if sigma < 0.0:
+            raise ValueError("Sigma values less than zero are not valid")
+        sigmas = (sigma,)
+
+    image_ndim = image.ndim
+    needs_channel = channel_axis is not None
+    # Fast path for grayscale (default, most common case)
+    if needs_channel:
+        ca_mod = channel_axis % image_ndim
+        # Ensure sigma covers right axes and insert 0 for channel
+        if not isinstance(sigma, Iterable) or isinstance(sigma, str):
+            sigmas = (sigma,) * (image_ndim - 1)
+        if len(sigmas) == image_ndim - 1:
+            # Only convert if mod-insertion really necessary
+            sigmas = list(sigmas)
+            sigmas.insert(ca_mod, 0.0)
+        else:
+            sigmas = tuple(sigmas)
+    else:
+        sigmas = sigmas if len(sigmas) == image_ndim else (sigma,) * image_ndim
+        ca_mod = None  # unused
+
+    # Only convert/cast if needed
     image = convert_to_float(image, preserve_range)
     float_dtype = _supported_float_type(image.dtype)
-    image = image.astype(float_dtype, copy=False)
+    if image.dtype != float_dtype:
+        image = image.astype(float_dtype, copy=False)
+
     if (out is not None) and (not np.issubdtype(out.dtype, np.floating)):
         raise ValueError(f"dtype of `out` must be float; got {out.dtype!r}.")
+
     return ndi.gaussian_filter(
-        image, sigma, output=out, mode=mode, cval=cval, truncate=truncate
+        image, sigmas, output=out, mode=mode, cval=cval, truncate=truncate
     )
