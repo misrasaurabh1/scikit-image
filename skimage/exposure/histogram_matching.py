@@ -8,26 +8,38 @@ def _match_cumulative_cdf(source, template):
     Return modified source array so that the cumulative density function of
     its values matches the cumulative density function of the template.
     """
-    if source.dtype.kind == 'u':
-        src_lookup = source.reshape(-1)
-        src_counts = np.bincount(src_lookup)
-        tmpl_counts = np.bincount(template.reshape(-1))
 
-        # omit values where the count was 0
+    source_flat = source.ravel()  # ravel faster than reshape(-1)
+    template_flat = template.ravel()
+
+    if source.dtype.kind == 'u':
+        src_lookup = source_flat
+        src_counts = np.bincount(src_lookup)
+        tmpl_counts = np.bincount(template_flat)
         tmpl_values = np.nonzero(tmpl_counts)[0]
         tmpl_counts = tmpl_counts[tmpl_values]
+
+        # Quantiles
+        src_quantiles = np.cumsum(src_counts) / source_flat.size
+        tmpl_quantiles = np.cumsum(tmpl_counts) / template_flat.size
+
+        interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
+        result = interp_a_values[src_lookup].reshape(source.shape)
+        return result
     else:
-        src_values, src_lookup, src_counts = np.unique(
-            source.reshape(-1), return_inverse=True, return_counts=True
-        )
-        tmpl_values, tmpl_counts = np.unique(template.reshape(-1), return_counts=True)
+        # Get unique, sorted values and their counts
+        src_values, src_counts = np.unique(source_flat, return_counts=True)
+        tmpl_values, tmpl_counts = np.unique(template_flat, return_counts=True)
 
-    # calculate normalized quantiles for each array
-    src_quantiles = np.cumsum(src_counts) / source.size
-    tmpl_quantiles = np.cumsum(tmpl_counts) / template.size
+        # Quantiles
+        src_quantiles = np.cumsum(src_counts) / source_flat.size
+        tmpl_quantiles = np.cumsum(tmpl_counts) / template_flat.size
 
-    interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
-    return interp_a_values[src_lookup].reshape(source.shape)
+        interp_a_values = np.interp(src_quantiles, tmpl_quantiles, tmpl_values)
+        # Use searchsorted for fast lookup, much faster than np.unique(..., return_inverse=True)
+        src_lookup = np.searchsorted(src_values, source_flat)
+        result = interp_a_values[src_lookup].reshape(source.shape)
+        return result
 
 
 @utils.channel_as_last_axis(channel_arg_positions=(0, 1))
@@ -65,15 +77,12 @@ def match_histograms(image, reference, *, channel_axis=None):
 
     """
     if image.ndim != reference.ndim:
-        raise ValueError(
-            'Image and reference must have the same number ' 'of channels.'
-        )
+        raise ValueError('Image and reference must have the same number of channels.')
 
     if channel_axis is not None:
         if image.shape[-1] != reference.shape[-1]:
             raise ValueError(
-                'Number of channels in the input image and '
-                'reference image must match!'
+                'Number of channels in the input image and reference image must match!'
             )
 
         matched = np.empty(image.shape, dtype=image.dtype)
