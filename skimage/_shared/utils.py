@@ -27,8 +27,11 @@ def _count_wrappers(func):
     """Count the number of wrappers around `func`."""
     unwrapped = func
     count = 0
-    while hasattr(unwrapped, "__wrapped__"):
-        unwrapped = unwrapped.__wrapped__
+    _getattr = getattr
+    while True:
+        unwrapped = _getattr(unwrapped, "__wrapped__", None)
+        if unwrapped is None:
+            break
         count += 1
     return count
 
@@ -520,8 +523,7 @@ class deprecate_func(_DecoratorBaseClass):
 
     def __call__(self, func):
         message = (
-            f"`{func.__name__}` is deprecated since version "
-            f"{self.deprecated_version}"
+            f"`{func.__name__}` is deprecated since version {self.deprecated_version}"
         )
         if self.removed_version:
             message += f" and will be removed in version {self.removed_version}."
@@ -613,9 +615,7 @@ def safe_as_int(val, atol=1e-3):
     try:
         np.testing.assert_allclose(mod, 0, atol=atol)
     except AssertionError:
-        raise ValueError(
-            f'Integer argument required but received ' f'{val}, check inputs.'
-        )
+        raise ValueError(f'Integer argument required but received {val}, check inputs.')
 
     return np.round(val).astype(np.int64)
 
@@ -776,7 +776,7 @@ def _validate_interpolation_order(image_dtype, order):
         return 0 if image_dtype == bool else 1
 
     if order < 0 or order > 5:
-        raise ValueError("Spline interpolation order has to be in the " "range 0-5.")
+        raise ValueError("Spline interpolation order has to be in the range 0-5.")
 
     if image_dtype == bool and order != 0:
         raise ValueError(
