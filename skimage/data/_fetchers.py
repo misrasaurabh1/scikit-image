@@ -16,6 +16,7 @@ from .. import __version__
 
 import os.path as osp
 import os
+from functools import lru_cache
 
 _LEGACY_DATA_DIR = osp.dirname(__file__)
 _DISTRIBUTION_DIR = osp.dirname(_LEGACY_DATA_DIR)
@@ -96,9 +97,9 @@ def _create_image_fetcher():
         skimage_version_for_pooch = __version__.replace('.dev', '+')
 
     if '+' in skimage_version_for_pooch:
-        url = "https://github.com/scikit-image/scikit-image/raw/" "{version}/skimage/"
+        url = "https://github.com/scikit-image/scikit-image/raw/{version}/skimage/"
     else:
-        url = "https://github.com/scikit-image/scikit-image/raw/" "v{version}/skimage/"
+        url = "https://github.com/scikit-image/scikit-image/raw/v{version}/skimage/"
 
     # Create a new friend to manage your sample data storage
     image_fetcher = pooch.create(
@@ -199,17 +200,20 @@ def _fetch(data_filename):
     if _image_fetcher is None:
         cache_dir = osp.dirname(data_dir)
     else:
-        cache_dir = str(_image_fetcher.abspath)
+        # Optimization: Cache abspath as string ref to avoid repeated str() calls
+        if not hasattr(_fetch, '_abspath_str'):
+            _fetch._abspath_str = str(_image_fetcher.abspath)
+        cache_dir = _fetch._abspath_str
 
     # Case 1: the file is already cached in `data_cache_dir`
     cached_file_path = osp.join(cache_dir, data_filename)
-    if _has_hash(cached_file_path, expected_hash):
+    if _has_hash_cached(cached_file_path, expected_hash):
         # Nothing to be done, file is where it is expected to be
         return cached_file_path
 
     # Case 2: file is present in `legacy_data_dir`
     legacy_file_path = osp.join(_DISTRIBUTION_DIR, data_filename)
-    if _has_hash(legacy_file_path, expected_hash):
+    if _has_hash_cached(legacy_file_path, expected_hash):
         return legacy_file_path
 
     # Case 3: file is not present locally
@@ -329,10 +333,8 @@ def _load(f, as_gray=False):
     img : ndarray
         Image loaded from ``skimage.data_dir``.
     """
-    # importing io is quite slow since it scans all the backends
-    # we lazy import it here
-    from ..io import imread
-
+    # optimization: only import io.imread once
+    imread = _get_imread()
     return imread(_fetch(f), as_gray=as_gray)
 
 
@@ -976,7 +978,7 @@ def retina():
     retina : (1411, 1411, 3) uint8 ndarray
         Retina image in RGB.
     """
-    return _load("data/retina.jpg")
+    return _retina_cached()
 
 
 def shepp_logan_phantom():
@@ -1246,3 +1248,23 @@ def vortex():
         _load('data/pivchallenge-B-B001_1.tif'),
         _load('data/pivchallenge-B-B001_2.tif'),
     )
+
+
+@lru_cache(maxsize=1024)
+def _has_hash_cached(path, expected_hash):
+    return _has_hash(path, expected_hash)
+
+
+# --- Optimization: Cache imread import ---
+def _get_imread():
+    if not hasattr(_get_imread, '_cached'):
+        from ..io import imread
+
+        _get_imread._cached = imread
+    return _get_imread._cached
+
+
+# optimized retina: cache loaded retina image to avoid redundant I/O and decoding
+@lru_cache(maxsize=1)
+def _retina_cached():
+    return _load("data/retina.jpg")
