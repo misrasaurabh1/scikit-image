@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 
 from ._warnings import all_warnings, warn
+from functools import lru_cache
 
 __all__ = [
     'deprecate_func',
@@ -520,8 +521,7 @@ class deprecate_func(_DecoratorBaseClass):
 
     def __call__(self, func):
         message = (
-            f"`{func.__name__}` is deprecated since version "
-            f"{self.deprecated_version}"
+            f"`{func.__name__}` is deprecated since version {self.deprecated_version}"
         )
         if self.removed_version:
             message += f" and will be removed in version {self.removed_version}."
@@ -601,23 +601,24 @@ def safe_as_int(val, atol=1e-3):
     53
 
     """
-    mod = np.asarray(val) % 1  # Extract mantissa
+    arr = np.asarray(val)
+    mod = np.mod(arr, 1)  # Extract mantissa
+    mod = np.where(mod > 0.5, 1 - mod, mod)  # Move to nearest integer
 
-    # Check for and subtract any mod values > 0.5 from 1
-    if mod.ndim == 0:  # Scalar input, cannot be indexed
-        if mod > 0.5:
-            mod = 1 - mod
-    else:  # Iterable input, now ndarray
-        mod[mod > 0.5] = 1 - mod[mod > 0.5]  # Test on each side of nearest int
+    # Fast check instead of np.testing.assert_allclose
+    close = np.abs(mod) <= atol
+    if np.isscalar(arr) or arr.ndim == 0:  # Scalar input
+        if not close:
+            raise ValueError(
+                f'Integer argument required but received {val}, check inputs.'
+            )
+    else:  # Vectorized
+        if not np.all(close):
+            raise ValueError(
+                f'Integer argument required but received {val}, check inputs.'
+            )
 
-    try:
-        np.testing.assert_allclose(mod, 0, atol=atol)
-    except AssertionError:
-        raise ValueError(
-            f'Integer argument required but received ' f'{val}, check inputs.'
-        )
-
-    return np.round(val).astype(np.int64)
+    return np.round(arr).astype(np.int64)
 
 
 def check_shape_equality(*images):
@@ -776,7 +777,7 @@ def _validate_interpolation_order(image_dtype, order):
         return 0 if image_dtype == bool else 1
 
     if order < 0 or order > 5:
-        raise ValueError("Spline interpolation order has to be in the " "range 0-5.")
+        raise ValueError("Spline interpolation order has to be in the range 0-5.")
 
     if image_dtype == bool and order != 0:
         raise ValueError(
@@ -889,3 +890,36 @@ def as_binary_ndarray(array, *, variable_name):
                 f"safely cast to boolean array."
             )
     return np.asarray(array, dtype=bool)
+
+
+@lru_cache(maxsize=256)
+def _local_mean_weights_cached(old_size, new_size, grid_mode, dtype_str):
+    """Cached version of _local_mean_weights for repeated arguments."""
+    # Dtype for np.linspace needs to be resolved from string
+    dtype = np.dtype(dtype_str)
+    if grid_mode:
+        old_breaks = np.linspace(0, old_size, num=old_size + 1, dtype=dtype)
+        new_breaks = np.linspace(0, old_size, num=new_size + 1, dtype=dtype)
+    else:
+        old, new = old_size - 1, new_size - 1
+        old_breaks = np.pad(
+            np.linspace(0.5, old - 0.5, old, dtype=dtype),
+            1,
+            'constant',
+            constant_values=(0, old),
+        )
+        val = np.inf if new == 0 else 0.5 * old / new
+        new_breaks = np.pad(
+            np.linspace(val, old - val, new, dtype=dtype),
+            1,
+            'constant',
+            constant_values=(0, old),
+        )
+    upper = np.minimum(new_breaks[1:, np.newaxis], old_breaks[np.newaxis, 1:])
+    lower = np.maximum(new_breaks[:-1, np.newaxis], old_breaks[np.newaxis, :-1])
+    weights = np.maximum(upper - lower, 0)
+    row_sums = np.sum(weights, axis=1, keepdims=True)
+    # Prevent division by zero if row is empty
+    row_sums[row_sums == 0] = 1
+    weights /= row_sums
+    return weights

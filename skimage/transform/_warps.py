@@ -14,6 +14,7 @@ from .._shared.utils import (
     _validate_interpolation_order,
     channel_as_last_axis,
 )
+from functools import lru_cache
 
 HOMOGRAPHY_TRANSFORMS = (SimilarityTransform, AffineTransform, ProjectiveTransform)
 
@@ -54,17 +55,16 @@ def _preprocess_resize_output_shape(image, output_shape):
     input_shape = image.shape
     if output_ndim > image.ndim:
         # append dimensions to input_shape
-        input_shape += (1,) * (output_ndim - image.ndim)
-        image = np.reshape(image, input_shape)
+        input_shape = input_shape + (1,) * (output_ndim - image.ndim)
+        if image.shape != input_shape:
+            image = np.reshape(image, input_shape)
     elif output_ndim == image.ndim - 1:
         # multichannel case: append shape of last axis
         output_shape = output_shape + (image.shape[-1],)
     elif output_ndim < image.ndim:
         raise ValueError(
-            "output_shape length cannot be smaller than the "
-            "image number of dimensions"
+            "output_shape length cannot be smaller than the image number of dimensions"
         )
-
     return image, output_shape
 
 
@@ -322,7 +322,7 @@ def rescale(
         if (not multichannel and len(scale) != image.ndim) or (
             multichannel and len(scale) != image.ndim - 1
         ):
-            raise ValueError("Supply a single scale, or one value per spatial " "axis")
+            raise ValueError("Supply a single scale, or one value per spatial axis")
         if multichannel:
             scale = np.concatenate((scale, [1]))
     orig_shape = np.asarray(image.shape)
@@ -1256,35 +1256,7 @@ def _local_mean_weights(old_size, new_size, grid_mode, dtype):
         Rows sum to 1.
 
     """
-    if grid_mode:
-        old_breaks = np.linspace(0, old_size, num=old_size + 1, dtype=dtype)
-        new_breaks = np.linspace(0, old_size, num=new_size + 1, dtype=dtype)
-    else:
-        old, new = old_size - 1, new_size - 1
-        old_breaks = np.pad(
-            np.linspace(0.5, old - 0.5, old, dtype=dtype),
-            1,
-            'constant',
-            constant_values=(0, old),
-        )
-        if new == 0:
-            val = np.inf
-        else:
-            val = 0.5 * old / new
-        new_breaks = np.pad(
-            np.linspace(val, old - val, new, dtype=dtype),
-            1,
-            'constant',
-            constant_values=(0, old),
-        )
-
-    upper = np.minimum(new_breaks[1:, np.newaxis], old_breaks[np.newaxis, 1:])
-    lower = np.maximum(new_breaks[:-1, np.newaxis], old_breaks[np.newaxis, :-1])
-
-    weights = np.maximum(upper - lower, 0)
-    weights /= weights.sum(axis=1, keepdims=True)
-
-    return weights
+    return _local_mean_weights_cached(old_size, new_size, grid_mode, str(dtype))
 
 
 def resize_local_mean(
@@ -1360,13 +1332,11 @@ def resize_local_mean(
         if channel_axis < -image.ndim or channel_axis >= image.ndim:
             raise ValueError("invalid channel_axis")
 
-        # move channels to last position
         image = np.moveaxis(image, channel_axis, -1)
         nc = image.shape[-1]
 
         output_ndim = len(output_shape)
         if output_ndim == image.ndim - 1:
-            # insert channels dimension at the end
             output_shape = output_shape + (nc,)
         elif output_ndim == image.ndim:
             if output_shape[channel_axis] != nc:
@@ -1374,10 +1344,11 @@ def resize_local_mean(
                     "Cannot reshape along the channel_axis. Use "
                     "channel_axis=None to reshape along all axes."
                 )
-            # move channels to last position in output_shape
-            channel_axis = channel_axis % image.ndim
+            channel_axis_mod = channel_axis % image.ndim
             output_shape = (
-                output_shape[:channel_axis] + output_shape[channel_axis:] + (nc,)
+                output_shape[:channel_axis_mod]
+                + output_shape[channel_axis_mod:]
+                + (nc,)
             )
         else:
             raise ValueError(
@@ -1387,18 +1358,77 @@ def resize_local_mean(
         resized = image
     else:
         resized, output_shape = _preprocess_resize_output_shape(image, output_shape)
-    resized = convert_to_float(resized, preserve_range)
+
+    # Fast-path float conversion
+    if preserve_range:
+        if resized.dtype == np.float16:
+            resized = resized.astype(np.float32, copy=False)
+        elif resized.dtype.char not in 'df':
+            resized = resized.astype(np.float64, copy=False)
+    else:
+        # inlined the logic of convert_to_float to avoid function call overhead
+        from skimage.util.dtype import img_as_float
+
+        resized = img_as_float(resized, force_copy=False)
+
     dtype = resized.dtype
 
+    # To avoid repeatedly copying arrays, apply all reductions in forward order
+    # and delay moveaxis as late as possible.
+    input_ndim = resized.ndim
+    axes_transform = []
     for axis, (old_size, new_size) in enumerate(zip(image.shape, output_shape)):
         if old_size == new_size:
             continue
+        # Compute and apply weights in only the axes that change size
         weights = _local_mean_weights(old_size, new_size, grid_mode, dtype)
-        product = np.tensordot(resized, weights, [[axis], [-1]])
-        resized = np.moveaxis(product, -1, axis)
+        # tensordot always contracts the specified axis, result is new dimension at the end
+        resized = np.tensordot(resized, weights, axes=([axis], [-1]))
+        # Move newly created last axis to axis's original position
+        # This minimizes data movement when several axes are being reduced sequentially
+        perm_order = list(range(resized.ndim))
+        last_axis = resized.ndim - 1
+        if axis != last_axis:
+            perm_order = perm_order[:-1]
+            perm_order.insert(axis, last_axis)
+            resized = resized.transpose(perm_order)
+        # For next axis, the size at axis now matches new_size
 
     if channel_axis is not None:
         # restore channels to original axis
         resized = np.moveaxis(resized, -1, channel_axis)
 
     return resized
+
+
+@lru_cache(maxsize=256)
+def _local_mean_weights_cached(old_size, new_size, grid_mode, dtype_str):
+    """Cached version of _local_mean_weights for repeated arguments."""
+    # Dtype for np.linspace needs to be resolved from string
+    dtype = np.dtype(dtype_str)
+    if grid_mode:
+        old_breaks = np.linspace(0, old_size, num=old_size + 1, dtype=dtype)
+        new_breaks = np.linspace(0, old_size, num=new_size + 1, dtype=dtype)
+    else:
+        old, new = old_size - 1, new_size - 1
+        old_breaks = np.pad(
+            np.linspace(0.5, old - 0.5, old, dtype=dtype),
+            1,
+            'constant',
+            constant_values=(0, old),
+        )
+        val = np.inf if new == 0 else 0.5 * old / new
+        new_breaks = np.pad(
+            np.linspace(val, old - val, new, dtype=dtype),
+            1,
+            'constant',
+            constant_values=(0, old),
+        )
+    upper = np.minimum(new_breaks[1:, np.newaxis], old_breaks[np.newaxis, 1:])
+    lower = np.maximum(new_breaks[:-1, np.newaxis], old_breaks[np.newaxis, :-1])
+    weights = np.maximum(upper - lower, 0)
+    row_sums = np.sum(weights, axis=1, keepdims=True)
+    # Prevent division by zero if row is empty
+    row_sums[row_sums == 0] = 1
+    weights /= row_sums
+    return weights
