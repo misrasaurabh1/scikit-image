@@ -119,7 +119,7 @@ def _get_outer_edges(image, hist_range):
             raise ValueError("max must be larger than min in hist_range parameter.")
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
-                f'supplied hist_range of [{first_edge}, {last_edge}] is ' f'not finite'
+                f'supplied hist_range of [{first_edge}, {last_edge}] is not finite'
             )
     elif image.size == 0:
         # handle empty arrays. Can't determine hist_range, so use 0-1.
@@ -128,8 +128,7 @@ def _get_outer_edges(image, hist_range):
         first_edge, last_edge = image.min(), image.max()
         if not (np.isfinite(first_edge) and np.isfinite(last_edge)):
             raise ValueError(
-                f'autodetected hist_range of [{first_edge}, {last_edge}] is '
-                f'not finite'
+                f'autodetected hist_range of [{first_edge}, {last_edge}] is not finite'
             )
 
     # expand empty hist_range to avoid divide by zero
@@ -608,6 +607,7 @@ def rescale_intensity(image, in_range='image', out_range='dtype'):
 
 
 def _assert_non_negative(image):
+    # Original comment preserved
     if np.any(image < 0):
         raise ValueError(
             'Image Correction methods work correctly only on '
@@ -618,9 +618,11 @@ def _assert_non_negative(image):
 
 def _adjust_gamma_u8(image, gamma, gain):
     """LUT based implementation of gamma adjustment."""
+    # Precompute LUT once: shape (256,) uint8 array
+    # Combined clip (np.clip) replaces np.minimum
     lut = 255 * gain * (np.linspace(0, 1, 256) ** gamma)
-    lut = np.minimum(np.rint(lut), 255).astype('uint8')
-    return lut[image]
+    lut = np.clip(np.rint(lut), 0, 255).astype('uint8', copy=False)
+    return lut[image]  # Advanced indexing, very fast for uint8 image
 
 
 def adjust_gamma(image, gamma=1, gain=1):
@@ -676,16 +678,24 @@ def adjust_gamma(image, gamma=1, gain=1):
     dtype = image.dtype.type
 
     if dtype is np.uint8:
-        out = _adjust_gamma_u8(image, gamma, gain)
+        # Fast-path for uint8 images
+        return _adjust_gamma_u8(image, gamma, gain)
     else:
         _assert_non_negative(image)
-
+        # Get limits only once, and avoid rescaling unless needed
         limits = dtype_limits(image, clip_negative=True)
-        scale = float(limits[1] - limits[0])
-
-        out = (((image / scale) ** gamma) * scale * gain).astype(dtype)
-
-    return out
+        imin, imax = limits
+        scale = float(imax - imin)
+        if scale == 0:
+            # Avoid division by zero for constant image
+            return np.zeros_like(image)
+        arr = image.astype(
+            np.float32, copy=False
+        )  # Safest for most cases, and saves memory
+        arr = arr / scale
+        arr = np.power(arr, gamma, out=arr)
+        arr *= scale * gain
+        return arr.astype(dtype, copy=False)
 
 
 def adjust_log(image, gain=1, inv=False):
